@@ -1,0 +1,352 @@
+// ADEPR Kacyiru — core identity, systems, participation, org-private finance.
+// Ministry-specific tables (choir repertoire, protocol teams, …) come later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Person {
+  id              String   @id
+  fullName        String
+  preferredName   String?
+  phone           String?
+  email           String?
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE | VISITOR
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account         Account?
+  memberships     Membership[]
+  positions       Position[]
+  fundGrants      FundAccessGrant[] @relation("GrantHolder")
+  fundGrantsIssued FundAccessGrant[] @relation("GrantIssuer")
+  auditEvents     AuditEvent[]
+}
+
+model Account {
+  id           String   @id
+  personId     String   @unique
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+/// Deployable peer / main / shared system in the ecosystem.
+model ChurchSystem {
+  id          String  @id // sys-main, sys-choir, …
+  code        String  @unique
+  name        String
+  shortName   String
+  kind        String // MAIN | MINISTRY | SHARED
+  status      String  @default("ACTIVE") // ACTIVE | PLANNED
+  description String  @default("")
+  basePath    String
+  externalUrl String?
+  orgUnitId   String?
+
+  orgUnit     OrgUnit?     @relation(fields: [orgUnitId], references: [id])
+  memberships Membership[]
+  positions   Position[]
+  funds       Fund[]
+}
+
+model OrgUnit {
+  id             String  @id
+  name           String
+  type           String // MINISTRY | TEAM | ORGANISATION | OFFICE | COMMITTEE
+  parentId       String?
+  systemId       String? // owning system when ministry-scoped
+  leaderPersonId String?
+
+  parent   OrgUnit?  @relation("OrgTree", fields: [parentId], references: [id])
+  children OrgUnit[] @relation("OrgTree")
+  systems  ChurchSystem[]
+  memberships Membership[]
+  positions   Position[]
+  funds       Fund[]
+}
+
+model Membership {
+  id        String    @id @default(cuid())
+  personId  String
+  systemId  String
+  orgUnitId String?
+  type      String // CHURCH_MEMBER | CHOIR_MEMBER | …
+  label     String?
+  status    String    @default("ACTIVE")
+  startDate DateTime  @default(now())
+  endDate   DateTime?
+
+  person  Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  system  ChurchSystem @relation(fields: [systemId], references: [id])
+  orgUnit OrgUnit?     @relation(fields: [orgUnitId], references: [id])
+
+  @@index([personId, systemId])
+}
+
+model Position {
+  id             String    @id @default(cuid())
+  personId       String
+  systemId       String?
+  orgUnitId      String?
+  title          String
+  systemRole     String? // CHURCH_LEADER | CHURCH_TREASURER | …
+  ministryOffice String? // PRESIDENT | VP | TREASURER | SECRETARY
+  choirOffice    String?
+  worshipOffice  String?
+  protocolOffice String?
+  deaconOffice   String?
+  grantsAllSystems Boolean @default(false)
+  status         String    @default("ACTIVE")
+  startDate      DateTime  @default(now())
+  endDate        DateTime?
+
+  person  Person        @relation(fields: [personId], references: [id], onDelete: Cascade)
+  system  ChurchSystem? @relation(fields: [systemId], references: [id])
+  orgUnit OrgUnit?      @relation(fields: [orgUnitId], references: [id])
+
+  @@index([personId, systemId])
+}
+
+model Fund {
+  id            String   @id
+  name          String
+  code          String   @unique
+  kind          String // GENERAL | MINISTRY | EVENT | PROJECT
+  orgUnitId     String
+  ownerSystemId String?
+  currency      String   @default("RWF")
+  status        String   @default("ACTIVE")
+  description   String?
+  createdAt     DateTime @default(now())
+
+  orgUnit OrgUnit       @relation(fields: [orgUnitId], references: [id])
+  system  ChurchSystem? @relation(fields: [ownerSystemId], references: [id])
+  grants  FundAccessGrant[]
+  txns    FinanceTxn[]
+}
+
+/// ORG_PRIVATE vault ACL — never inferred from CHURCH_LEADER alone.
+model FundAccessGrant {
+  id                String    @id @default(cuid())
+  fundId            String
+  personId          String
+  action            String // VIEW | MANAGE | APPROVE
+  grantedByPersonId String
+  reason            String
+  status            String    @default("ACTIVE")
+  startDate         DateTime  @default(now())
+  endDate           DateTime?
+
+  fund      Fund   @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  person    Person @relation("GrantHolder", fields: [personId], references: [id], onDelete: Cascade)
+  grantedBy Person @relation("GrantIssuer", fields: [grantedByPersonId], references: [id])
+
+  @@index([personId, fundId])
+}
+
+model FinanceTxn {
+  id          String   @id @default(cuid())
+  fundId      String
+  kind        String // INCOME | EXPENSE
+  amount      Int
+  occurredOn  DateTime
+  label       String
+  note        String?
+  postedById  String?
+  createdAt   DateTime @default(now())
+
+  fund Fund @relation(fields: [fundId], references: [id], onDelete: Cascade)
+
+  @@index([fundId, occurredOn])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  actorId    String?
+  systemId   String?
+  action     String
+  resource   String?
+  detail     String?
+  metaJson   String?
+
+  actor Person? @relation(fields: [actorId], references: [id])
+
+  @@index([at])
+}
+
+/// One-time SSO handoff tokens (church → peer).
+model SsoHandoffToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  accountId String
+  systemId  String
+  expiresAt DateTime
+  redeemedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+/* ─── Mission kit (programs / events / tasks / projects) ─── */
+
+model Program {
+  id                String   @id @default(cuid())
+  name              String
+  description       String   @default("")
+  orgUnitId         String?
+  ownerSystemId     String
+  visibility        String   @default("MINISTRY") // maps client: CHURCH|MINISTRY_PRIVATE|SELECTIVE
+  /// Client-aligned: DRAFT | PENDING_APPROVAL | SETUP | ACTIVE | PAUSED | CLOSING | ENDED
+  status            String   @default("DRAFT")
+  programType       String?
+  scheduleHint      String?
+  parentProgramId   String?
+  cohortLabel       String?
+  createdByPersonId String?
+  approvedByPersonId String?
+  approvedAt        DateTime?
+  /// Optional JSON stewardship blob (money/delivery/ops) — SPA is source of truth until hydrated.
+  stewardshipJson   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([ownerSystemId, status])
+}
+
+model ChurchEvent {
+  id                   String   @id @default(cuid())
+  name                 String
+  type                 String   @default("OTHER")
+  description          String?
+  orgUnitId            String?
+  ownerSystemId        String
+  visibility           String   @default("MINISTRY")
+  startsAt             DateTime
+  endsAt               DateTime?
+  location             String?
+  status               String   @default("DRAFT")
+  registrationMode     String?
+  capacity             Int?
+  beyondOwnerScope     Boolean  @default(false)
+  createdByPersonId    String?
+  programId            String?
+  projectId            String?
+  collaboratorSystemIds String? // JSON array
+  collaboratorPersonIds String? // JSON array
+  lifecyclePhase       String?  @default("PREPARE")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([ownerSystemId, startsAt])
+  @@index([projectId])
+}
+
+model WorkTask {
+  id                 String    @id @default(cuid())
+  title              String
+  description        String?
+  ownerPersonId      String
+  helperPersonIds    String? // JSON array
+  createdByPersonId  String?
+  contextType        String    @default("GENERAL")
+  contextId          String?
+  contextLabel       String?
+  systemId           String?
+  grantsSystemAccess Boolean   @default(false)
+  accessRevokedAt    DateTime?
+  visibility         String    @default("MINISTRY")
+  status             String    @default("TODO") // TODO | IN_PROGRESS | DONE | CANCELLED
+  dueDate            DateTime?
+  startDate          DateTime  @default(now())
+  endDate            DateTime?
+  outcomeNote        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([ownerPersonId, status])
+  @@index([systemId, status])
+}
+
+model ChurchProject {
+  id                String    @id @default(cuid())
+  name              String
+  description       String    @default("")
+  ownerSystemId     String
+  orgUnitId         String?
+  visibility        String    @default("MINISTRY")
+  /// Client-aligned: DRAFT | PENDING_APPROVAL | PLANNED | ACTIVE | PAUSED | CLOSING | DONE | CANCELLED
+  status            String    @default("DRAFT")
+  programId         String?
+  fundId            String?
+  willSpend         Boolean   @default(false)
+  beyondOwnerScope  Boolean   @default(false)
+  createdByPersonId String?
+  leadPersonId      String?
+  startsOn          DateTime?
+  endsOn            DateTime?
+  stewardshipJson   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([ownerSystemId, status])
+  @@index([programId])
+}
+
+/* ─── Temporary context roles (program / project / event) ─── */
+
+model Assignment {
+  id           String    @id @default(cuid())
+  personId     String
+  title        String
+  contextType  String // PROGRAM | PROJECT | EVENT
+  contextId    String
+  contextLabel String
+  orgUnitId    String?
+  systemId     String? // temporary SYSTEM ENTER while active
+  status       String    @default("ACTIVE") // ACTIVE | COMPLETED | CANCELLED
+  startDate    DateTime  @default(now())
+  endDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([personId, status])
+  @@index([systemId, status])
+}
+
+/* ─── Ministry contribution claims → FinanceTxn ─── */
+
+/// Member claim; treasurer verify posts INCOME FinanceTxn into org-private fund.
+model ContributionClaim {
+  id                 String    @id @default(cuid())
+  systemId           String
+  fundId             String
+  orgUnitId          String?
+  personId           String
+  typeLabel          String
+  amount             Int
+  paymentMethod      String
+  occurredOn         DateTime
+  note               String?
+  status             String    @default("PENDING") // PENDING | CONFIRMED | PARTIAL | DECLINED
+  confirmedAmount    Int?
+  submittedAt        DateTime  @default(now())
+  verifiedAt         DateTime?
+  verifiedByPersonId String?
+  verifyNote         String?
+  financeTxnId       String?
+
+  @@index([systemId, status])
+  @@index([personId, submittedAt])
+  @@index([fundId])
+  @@index([orgUnitId])
+}
