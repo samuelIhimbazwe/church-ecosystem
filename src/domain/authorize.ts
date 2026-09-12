@@ -572,8 +572,7 @@ export function buildEffectiveAccess(
       if (
         office === 'TREASURER' ||
         office === 'COORDINATOR' ||
-        office === 'PRESIDENT' ||
-        office === 'VP'
+        office === 'PRESIDENT'
       ) {
         pushGrant(grants, {
           systemId: 'sys-deacon',

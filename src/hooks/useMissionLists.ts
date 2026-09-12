@@ -134,7 +134,7 @@ export function useTasksList(opts?: { systemId?: SystemId }) {
         setTasks(
           missionService.listTasks({
             systemId: opts?.systemId,
-            personId: account?.personId,
+            involvedPersonId: account?.personId,
           }),
         );
         setSource('seed');

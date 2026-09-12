@@ -146,6 +146,31 @@ function boardModulesFor(
   systemId: SystemId,
   office: MissionLeaderOffice,
 ): readonly string[] {
+  // Handle before TREASURER/SECRETARY early returns so office comparisons stay valid.
+  if (systemId === 'sys-music') {
+    if (office === 'TREASURER') {
+      return ['home', 'mission', 'my-contributions', ...FINANCE_SUITE];
+    }
+    if (office === 'SECRETARY') {
+      return [
+        ...PEER_OPS,
+        'schedule',
+        'schedule-drafts',
+        'schedule-published',
+        'schedule-inbox',
+      ];
+    }
+    return [
+      ...PEER_OPS,
+      'schedule',
+      'schedule-drafts',
+      'schedule-published',
+      'schedule-inbox',
+      'finance',
+      'reports',
+    ];
+  }
+
   if (office === 'TREASURER') {
     if (systemId === 'sys-protocol') {
       return ['home', 'mission', 'mine', 'finance', 'reports', 'my-contributions'];
@@ -244,29 +269,6 @@ function boardModulesFor(
     ];
   }
   // Youth + peer kit — board ops; full money suite is treasurer-only
-  if (systemId === 'sys-music') {
-    if (office === 'TREASURER') {
-      return ['home', 'mission', 'my-contributions', ...FINANCE_SUITE];
-    }
-    if (office === 'SECRETARY') {
-      return [
-        ...PEER_OPS,
-        'schedule',
-        'schedule-drafts',
-        'schedule-published',
-        'schedule-inbox',
-      ];
-    }
-    return [
-      ...PEER_OPS,
-      'schedule',
-      'schedule-drafts',
-      'schedule-published',
-      'schedule-inbox',
-      'finance',
-      'reports',
-    ];
-  }
   if (office === 'PRESIDENT' || office === 'VP') {
     return [...PEER_OPS, 'finance', 'reports'];
   }

@@ -70,7 +70,7 @@ export function StewardshipPanel({
   const [srcType, setSrcType] = useState<FundingSourceType>('MINISTRY_FUND');
   const [srcLabel, setSrcLabel] = useState('');
   const [srcAmount, setSrcAmount] = useState('');
-  const [srcFund, setSrcFund] = useState(defaultFundId ?? '');
+  const [srcFund] = useState(defaultFundId ?? '');
 
   const [allocLabel, setAllocLabel] = useState('');
   const [allocAmount, setAllocAmount] = useState('');

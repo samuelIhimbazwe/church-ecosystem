@@ -22,6 +22,29 @@ import type {
   MinistrySponsorship,
 } from './ministryFinanceKit';
 
+export type {
+  MinistryAsset,
+  MinistryBudget,
+  MinistryBudgetLine,
+  MinistryCampaignGift,
+  MinistryContribution,
+  MinistryContributionDrive,
+  MinistryContributionGoal,
+  MinistryContributionStatus,
+  MinistryContributionType,
+  MinistryDonation,
+  MinistryExpenseRecord,
+  MinistryExpenseStatus,
+  MinistryFollowUp,
+  MinistryFundraisingCampaign,
+  MinistryIncomeRecord,
+  MinistryLiability,
+  MinistryPaymentMethod,
+  MinistryPaymentMethodConfig,
+  MinistrySponsor,
+  MinistrySponsorship,
+};
+
 /** Canonical human identity — one Person across every system. */
 export interface Person {
   id: string;
@@ -945,7 +968,14 @@ export type WorshipDutyRole = ChoirDutyRole;
 export type WorshipDutySlot = ChoirDutySlot;
 export type WorshipTeam = ChoirTeam;
 export type WorshipTeamMember = ChoirTeamMember;
-export type WorshipRosterMember = ChoirRosterMember;
+export interface WorshipRosterMember {
+  id: string;
+  orgUnitId: string;
+  personId: string;
+  office: WorshipOffice;
+  teamId?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}
 export type WorshipPaymentMethod = ChoirPaymentMethod;
 export type WorshipContributionType = ChoirContributionType;
 export type WorshipPaymentMethodConfig = ChoirPaymentMethodConfig;

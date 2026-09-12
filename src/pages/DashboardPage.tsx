@@ -5,7 +5,7 @@ import { StatusPill } from '../components/ui/StatusPill';
 import { useAuth } from '../auth/AuthContext';
 import { roleLabel } from '../domain/access';
 import { canApproveEventLevel, canApproveScopeLevel } from '../domain/eventScope';
-import type { SystemRole, WorkTask } from '../domain/types';
+import type { SystemId, SystemRole, WorkTask } from '../domain/types';
 import {
   isChurchLeadership,
   missionService,
@@ -583,7 +583,7 @@ function DashboardCalendarPanel({
               </Link>
               <div className="muted">
                 {new Date(item.startsAt).toLocaleDateString()} · {item.kind} ·{' '}
-                {systemsService.getById(item.systemId)?.shortName ??
+                {systemsService.getById(item.systemId as SystemId)?.shortName ??
                   item.systemId}
               </div>
             </li>
@@ -667,7 +667,8 @@ function DashboardAccessPanel({
           {peerPreview.map((e) => (
             <li key={e.systemId}>
               <strong>
-                {systemsService.getById(e.systemId)?.shortName ?? e.systemId}
+                {systemsService.getById(e.systemId as SystemId)?.shortName ??
+                  e.systemId}
               </strong>
               <div className="muted">{e.reasons[0] ?? ''}</div>
             </li>

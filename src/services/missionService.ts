@@ -1299,7 +1299,7 @@ export const missionService = {
    */
   approveProject(
     id: string,
-    approverPersonId: string,
+    _approverPersonId: string,
     roles: SystemRole[],
   ): { ok: boolean; reason?: string; project?: ChurchProject } {
     if (!isChurchLeadership(roles)) {

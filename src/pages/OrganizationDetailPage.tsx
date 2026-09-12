@@ -67,18 +67,23 @@ export function OrganizationDetailPage() {
     return <Navigate to="/organization" replace />;
   }
 
-  const parent = unit.parentId ? orgService.getById(unit.parentId) : null;
+  // Capture narrowed unit for nested handlers (TS does not retain narrowing in closures).
+  const browseUnit = unit;
+
+  const parent = browseUnit.parentId
+    ? orgService.getById(browseUnit.parentId)
+    : null;
   const children = orgService
     .list()
-    .filter((u) => u.parentId === unit.id && isBrowseUnit(u));
-  const system = unit.systemId
-    ? systemsService.getById(unit.systemId)
+    .filter((u) => u.parentId === browseUnit.id && isBrowseUnit(u));
+  const system = browseUnit.systemId
+    ? systemsService.getById(browseUnit.systemId)
     : null;
-  const roster = participationService.rosterByOrgUnit(unit.id);
-  const positions = participationService.positionsByOrgUnit(unit.id);
+  const roster = participationService.rosterByOrgUnit(browseUnit.id);
+  const positions = participationService.positionsByOrgUnit(browseUnit.id);
 
   const leaderIds = new Set<string>();
-  if (unit.leaderPersonId) leaderIds.add(unit.leaderPersonId);
+  if (browseUnit.leaderPersonId) leaderIds.add(browseUnit.leaderPersonId);
   for (const pos of positions) leaderIds.add(pos.personId);
 
   const leaders = [...leaderIds].map((personId) => {
@@ -86,10 +91,10 @@ export function OrganizationDetailPage() {
     const titles = positions
       .filter((p) => p.personId === personId)
       .map((p) => p.title);
-    if (unit.leaderPersonId === personId && !titles.length) {
+    if (browseUnit.leaderPersonId === personId && !titles.length) {
       titles.push('Leader');
     } else if (
-      unit.leaderPersonId === personId &&
+      browseUnit.leaderPersonId === personId &&
       !titles.some((t) => /leader/i.test(t))
     ) {
       titles.unshift('Leader');
@@ -113,7 +118,7 @@ export function OrganizationDetailPage() {
       setMsg(d.reason);
       return;
     }
-    const updated = orgService.update(unit.id, {
+    const updated = orgService.update(browseUnit.id, {
       name: name.trim(),
       type,
       parentId: parentId || undefined,
@@ -140,7 +145,7 @@ export function OrganizationDetailPage() {
             type="button"
             className="btn secondary"
             onClick={() => {
-              syncForm(unit);
+              syncForm(browseUnit);
               setEditing(true);
             }}
           >
@@ -153,7 +158,7 @@ export function OrganizationDetailPage() {
         <div className="org-detail-header">
           <div>
             <p className="muted" style={{ margin: 0 }}>
-              {categoryLabel(unit.type)}
+              {categoryLabel(browseUnit.type)}
               {parent && (
                 <>
                   {' '}
@@ -162,7 +167,7 @@ export function OrganizationDetailPage() {
                 </>
               )}
             </p>
-            <h2 style={{ margin: '0.25rem 0 0' }}>{unit.name}</h2>
+            <h2 style={{ margin: '0.25rem 0 0' }}>{browseUnit.name}</h2>
           </div>
           {system && (
             <span
@@ -173,7 +178,7 @@ export function OrganizationDetailPage() {
           )}
         </div>
         <p style={{ margin: 0, maxWidth: '42rem' }}>
-          {unit.description?.trim() || 'No description yet.'}
+          {browseUnit.description?.trim() || 'No description yet.'}
         </p>
         {msg && <p className="muted">{msg}</p>}
         {system && system.status === 'ACTIVE' && canEnter(system.id) && (
@@ -307,7 +312,7 @@ export function OrganizationDetailPage() {
                 <option value="">— none —</option>
                 {orgService
                   .list()
-                  .filter((u) => u.id !== unit.id)
+                  .filter((u) => u.id !== browseUnit.id)
                   .map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name}
