@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { StewardshipPanel } from '../components/StewardshipPanel';
 import { ApprovalStepper } from '../components/ui/ApprovalStepper';
@@ -11,6 +11,7 @@ import {
   fundingGap,
 } from '../domain/stewardship';
 import type { SystemId } from '../domain/types';
+import { missionListPath } from '../navigation/missionPaths';
 import {
   financeService,
   isChurchLeadership,
@@ -21,6 +22,8 @@ import {
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const listPath = missionListPath(location.pathname, 'projects');
   const { can, account, positions, roles, refreshSession } = useAuth();
   const [, setTick] = useState(0);
   const refresh = () => {
@@ -39,7 +42,7 @@ export function ProjectDetailPage() {
     return (
       <div className="panel">
         <p className="muted">No access.</p>
-        <Link to="/projects">← Projects</Link>
+        <Link to={listPath}>← Projects</Link>
       </div>
     );
   }
@@ -47,7 +50,7 @@ export function ProjectDetailPage() {
     return (
       <div className="panel">
         <p>Project not found.</p>
-        <Link to="/projects">← Projects</Link>
+        <Link to={listPath}>← Projects</Link>
       </div>
     );
   }
@@ -148,7 +151,7 @@ export function ProjectDetailPage() {
   return (
     <div className="stack">
       <p>
-        <Link to="/projects">← Projects</Link>
+        <Link to={listPath}>← Projects</Link>
       </p>
       {msg && <p className="badge">{msg}</p>}
 

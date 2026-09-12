@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAdminTools } from './components/RequireAdminTools';
+import { SystemScopeGuard } from './navigation/SystemScopeGuard';
 import { AccessEnginePage } from './pages/AccessEnginePage';
 import { CalendarPage } from './pages/CalendarPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -95,12 +96,21 @@ import {
 } from './pages/ministry/YouthPages';
 import { FinanceShell } from './pages/ministry/FinanceShell';
 import {
+  MusicHomePage,
+  MusicMissionPage,
+  MusicScheduleDraftsPage,
+  MusicScheduleInboxPage,
+  MusicSchedulePublishedPage,
+  MusicScheduleWorkspacePage,
+} from './pages/ministry/MusicSchedulePages';
+import {
   PeerMinistryHomePage,
   PeerMinistryMissionPage,
 } from './pages/ministry/PeerMinistryPages';
 import {
   PeerEventsPage,
   PeerProgramsPage,
+  PeerProjectsPage,
   PeerTasksPage,
 } from './pages/ministry/PeerMissionPages';
 import {
@@ -245,6 +255,7 @@ const YOUTH_NAV = [
   { to: '/systems/youth/programs', label: 'Programs' },
   { to: '/systems/youth/events', label: 'Events' },
   { to: '/systems/youth/tasks', label: 'Tasks' },
+  { to: '/systems/youth/projects', label: 'Projects' },
   { to: '/systems/youth/my-contributions', label: 'My contributions' },
   { to: '/systems/youth/finance', label: 'Finance' },
   { to: '/systems/youth/donations', label: 'Donations' },
@@ -253,6 +264,27 @@ const YOUTH_NAV = [
   { to: '/systems/youth/accounting', label: 'Accounting' },
   { to: '/systems/youth/assets', label: 'Assets' },
   { to: '/systems/youth/reports', label: 'Reports' },
+];
+
+const MUSIC_NAV = [
+  { to: '/systems/music', label: 'Home', end: true },
+  { to: '/systems/music/mission', label: 'Mission' },
+  { to: '/systems/music/schedule', label: 'Schedule' },
+  { to: '/systems/music/schedule-drafts', label: 'Drafts' },
+  { to: '/systems/music/schedule-published', label: 'Choir schedule' },
+  { to: '/systems/music/schedule-inbox', label: 'Inbox' },
+  { to: '/systems/music/programs', label: 'Programs' },
+  { to: '/systems/music/events', label: 'Events' },
+  { to: '/systems/music/tasks', label: 'Tasks' },
+  { to: '/systems/music/projects', label: 'Projects' },
+  { to: '/systems/music/my-contributions', label: 'My contributions' },
+  { to: '/systems/music/finance', label: 'Finance' },
+  { to: '/systems/music/donations', label: 'Donations' },
+  { to: '/systems/music/sponsors', label: 'Sponsors' },
+  { to: '/systems/music/fundraising', label: 'Fundraising' },
+  { to: '/systems/music/accounting', label: 'Accounting' },
+  { to: '/systems/music/assets', label: 'Assets' },
+  { to: '/systems/music/reports', label: 'Reports' },
 ];
 
 const PROTOCOL_NAV = [
@@ -295,6 +327,7 @@ function ChoirMissionPage() {
 export default function App() {
   return (
     <AuthProvider>
+      <SystemScopeGuard>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/sso/handoff" element={<SsoHandoffPage />} />
@@ -522,6 +555,16 @@ export default function App() {
             />
             <Route path="tasks/:id" element={<TaskDetailPage />} />
             <Route
+              path="projects"
+              element={
+                <PeerProjectsPage
+                  systemId="sys-youth"
+                  basePath="/systems/youth"
+                />
+              }
+            />
+            <Route path="projects/:id" element={<ProjectDetailPage />} />
+            <Route
               path="my-contributions"
               element={<MinistryMyContributionsPage systemId="sys-youth" />}
             />
@@ -552,6 +595,114 @@ export default function App() {
             <Route
               path="reports"
               element={<MinistryFinanceReportsPage systemId="sys-youth" />}
+            />
+          </Route>
+        </Route>
+
+        <Route
+          path="/systems/music"
+          element={
+            <MinistryShell
+              systemId="sys-music"
+              basePath="/systems/music"
+              nav={MUSIC_NAV}
+            />
+          }
+        >
+          <Route
+            element={
+              <RequireMinistryModule
+                systemId="sys-music"
+                basePath="/systems/music"
+              />
+            }
+          >
+            <Route index element={<MusicHomePage />} />
+            <Route path="mission" element={<MusicMissionPage />} />
+            <Route path="schedule" element={<MusicScheduleWorkspacePage />} />
+            <Route
+              path="schedule-drafts"
+              element={<MusicScheduleDraftsPage />}
+            />
+            <Route
+              path="schedule-published"
+              element={<MusicSchedulePublishedPage />}
+            />
+            <Route
+              path="schedule-inbox"
+              element={<MusicScheduleInboxPage />}
+            />
+            <Route
+              path="programs"
+              element={
+                <PeerProgramsPage
+                  systemId="sys-music"
+                  basePath="/systems/music"
+                />
+              }
+            />
+            <Route path="programs/:id" element={<ProgramDetailPage />} />
+            <Route
+              path="events"
+              element={
+                <PeerEventsPage
+                  systemId="sys-music"
+                  basePath="/systems/music"
+                />
+              }
+            />
+            <Route path="events/:id" element={<EventDetailPage />} />
+            <Route
+              path="tasks"
+              element={
+                <PeerTasksPage
+                  systemId="sys-music"
+                  basePath="/systems/music"
+                />
+              }
+            />
+            <Route path="tasks/:id" element={<TaskDetailPage />} />
+            <Route
+              path="projects"
+              element={
+                <PeerProjectsPage
+                  systemId="sys-music"
+                  basePath="/systems/music"
+                />
+              }
+            />
+            <Route path="projects/:id" element={<ProjectDetailPage />} />
+            <Route
+              path="my-contributions"
+              element={<MinistryMyContributionsPage systemId="sys-music" />}
+            />
+            <Route
+              path="finance"
+              element={<MinistryFinanceOverviewPage systemId="sys-music" />}
+            />
+            <Route
+              path="donations"
+              element={<MinistryDonationsPage systemId="sys-music" />}
+            />
+            <Route
+              path="sponsors"
+              element={<MinistrySponsorsPage systemId="sys-music" />}
+            />
+            <Route
+              path="fundraising"
+              element={<MinistryFundraisingPage systemId="sys-music" />}
+            />
+            <Route
+              path="accounting"
+              element={<MinistryAccountingPage systemId="sys-music" />}
+            />
+            <Route
+              path="assets"
+              element={<MinistryAssetsPage systemId="sys-music" />}
+            />
+            <Route
+              path="reports"
+              element={<MinistryFinanceReportsPage systemId="sys-music" />}
             />
           </Route>
         </Route>
@@ -614,6 +765,16 @@ export default function App() {
                 }
               />
               <Route path="tasks/:id" element={<TaskDetailPage />} />
+              <Route
+                path="projects"
+                element={
+                  <PeerProjectsPage
+                    systemId={peer.systemId}
+                    basePath={`/systems/${peer.slug}`}
+                  />
+                }
+              />
+              <Route path="projects/:id" element={<ProjectDetailPage />} />
               <Route
                 path="my-contributions"
                 element={
@@ -797,6 +958,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </SystemScopeGuard>
     </AuthProvider>
   );
 }

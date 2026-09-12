@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { StewardshipPanel } from '../components/StewardshipPanel';
 import { StatusPill } from '../components/ui/StatusPill';
@@ -9,6 +9,7 @@ import {
   fundingGap,
 } from '../domain/stewardship';
 import type { AttendanceStatus, MembershipType } from '../domain/types';
+import { missionListPath } from '../navigation/missionPaths';
 import {
   isChurchLeadership,
   missionService,
@@ -18,6 +19,8 @@ import {
 
 export function ProgramDetailPage() {
   const { id } = useParams();
+  const location = useLocation();
+  const listPath = missionListPath(location.pathname, 'programs');
   const navigate = useNavigate();
   const { account, can, roles, refreshSession } = useAuth();
   const [, setTick] = useState(0);
@@ -58,7 +61,7 @@ export function ProgramDetailPage() {
     return (
       <div className="panel">
         <p className="error">No access</p>
-        <Link to="/programs">Back</Link>
+        <Link to={listPath}>Back</Link>
       </div>
     );
   }
@@ -66,7 +69,7 @@ export function ProgramDetailPage() {
     return (
       <div className="panel">
         <h2>Program not found</h2>
-        <Link to="/programs">Back</Link>
+        <Link to={listPath}>Back</Link>
       </div>
     );
   }
@@ -205,7 +208,7 @@ export function ProgramDetailPage() {
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
             <p className="muted" style={{ margin: 0 }}>
-              <Link to="/programs">← Programs</Link>
+              <Link to={listPath}>← Programs</Link>
             </p>
             <h2 style={{ margin: '0.35rem 0' }}>{program.name}</h2>
             <p className="muted" style={{ margin: 0 }}>

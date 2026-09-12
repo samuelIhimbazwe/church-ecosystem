@@ -1,5 +1,12 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
-import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
+import {
+  Link,
+  NavLink,
+  Navigate,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import {
   filterMinistryNav,
@@ -8,6 +15,7 @@ import {
   resolveMinistryBoardOffice,
 } from '../../domain/ministryNavAccess';
 import type { SystemId } from '../../domain/types';
+import { armExitToMainChurch, clearExitToMainChurch } from '../../navigation/systemScope';
 import { authService, systemsService } from '../../services';
 
 export function MinistryShell({
@@ -36,8 +44,16 @@ export function MinistryShell({
     canViewPeople,
     positions,
   } = useAuth();
+  const navigate = useNavigate();
   const system = systemsService.getById(systemId);
   const profilePath = account ? `/people/${account.personId}` : '/';
+
+  function openMainChurch() {
+    armExitToMainChurch();
+    authService.setCurrentSystem('sys-main', 'main');
+    refreshSession();
+    navigate('/', { replace: true });
+  }
 
   const boardOffice = useMemo(() => {
     if (!account || !enforceMemberNav || systemId === 'sys-choir') {
@@ -64,6 +80,7 @@ export function MinistryShell({
   useEffect(() => {
     if (!account || !canEnter(systemId)) return;
     if (session?.currentSystemId === systemId) return;
+    clearExitToMainChurch();
     authService.setCurrentSystem(
       systemId,
       session?.entryMode === 'handoff' ? 'handoff' : 'direct',
@@ -86,7 +103,9 @@ export function MinistryShell({
           <p style={{ marginTop: '1rem' }}>
             <Link to={`/login?system=${systemId}`}>Sign in here</Link>
             {' · '}
-            <Link to="/">Back to Main Church</Link>
+            <button type="button" className="btn ghost" onClick={openMainChurch}>
+              Open Main Church
+            </button>
           </p>
         </div>
       </div>
@@ -116,7 +135,14 @@ export function MinistryShell({
           </div>
         </div>
         <div className="row">
-          <Link to="/">Open Main Church</Link>
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ color: '#e4eef7', borderColor: '#2a4a66' }}
+            onClick={openMainChurch}
+          >
+            Open Main Church
+          </button>
           <button
             type="button"
             className="btn ghost"

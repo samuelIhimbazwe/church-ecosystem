@@ -12,14 +12,6 @@ export type PeerCoreConfig = {
 
 export const PEER_CORE_SYSTEMS: PeerCoreConfig[] = [
   {
-    systemId: 'sys-music',
-    slug: 'music',
-    title: 'Music System',
-    blurb:
-      'Music oversight and artists. Does not open Choir or Worship vaults without their grants.',
-    missionTitle: 'Music mission board',
-  },
-  {
     systemId: 'sys-media',
     slug: 'media',
     title: 'Media System',
@@ -87,6 +79,7 @@ export function peerCoreNav(slug: string) {
     { to: `${base}/programs`, label: 'Programs' },
     { to: `${base}/events`, label: 'Events' },
     { to: `${base}/tasks`, label: 'Tasks' },
+    { to: `${base}/projects`, label: 'Projects' },
     { to: `${base}/my-contributions`, label: 'My contributions' },
     { to: `${base}/finance`, label: 'Finance' },
     { to: `${base}/donations`, label: 'Donations' },

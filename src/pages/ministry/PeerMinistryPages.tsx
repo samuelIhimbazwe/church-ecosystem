@@ -62,6 +62,9 @@ export function PeerMinistryHomePage({ systemId }: { systemId: SystemId }) {
             <Link to={`${missionPath.replace(/\/mission$/, '')}/tasks`}>
               Tasks
             </Link>
+            <Link to={`${missionPath.replace(/\/mission$/, '')}/projects`}>
+              Projects
+            </Link>
             <Link to={`${missionPath.replace(/\/mission$/, '')}/finance`}>
               Finance kit — contributions · donations · budgets · assets
             </Link>

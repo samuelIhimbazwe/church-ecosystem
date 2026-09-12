@@ -1,3 +1,4 @@
+export { musicScheduleService } from './musicScheduleService';
 export { ministryFinanceService } from './ministryFinanceService';
 export { accessService } from './accessService';
 export { auditService } from './auditService';

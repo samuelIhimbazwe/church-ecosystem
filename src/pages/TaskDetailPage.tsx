@@ -1,11 +1,14 @@
 import { type FormEvent, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { StatusPill } from '../components/ui/StatusPill';
+import { missionListPath } from '../navigation/missionPaths';
 import { peopleService, systemsService, missionService } from '../services';
 
 export function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const listPath = missionListPath(location.pathname, 'tasks');
   const { can, account, refreshSession } = useAuth();
   const [, setTick] = useState(0);
   const refresh = () => {
@@ -22,7 +25,7 @@ export function TaskDetailPage() {
     return (
       <div className="panel">
         <p className="muted">No access.</p>
-        <Link to="/tasks">← Tasks</Link>
+        <Link to={listPath}>← Tasks</Link>
       </div>
     );
   }
@@ -30,7 +33,7 @@ export function TaskDetailPage() {
     return (
       <div className="panel">
         <p>Task not found.</p>
-        <Link to="/tasks">← Tasks</Link>
+        <Link to={listPath}>← Tasks</Link>
       </div>
     );
   }
@@ -102,7 +105,7 @@ export function TaskDetailPage() {
   return (
     <div className="stack">
       <p>
-        <Link to="/tasks">← Tasks</Link>
+        <Link to={listPath}>← Tasks</Link>
       </p>
       {msg && <p className="badge">{msg}</p>}
 

@@ -1,6 +1,7 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { peekExitToMainChurch, consumeExitToMainChurch } from '../../navigation/systemScope';
 import { authService } from '../../services';
 
 const NAV_GROUPS: Array<{
@@ -55,12 +56,24 @@ export function AppShell({
     canViewPeople,
     account,
     can,
+    session,
   } = useAuth();
+  const location = useLocation();
 
   useEffect(() => {
+    // Do not steal an active peer/shared session on a transient Back into Main.
+    // "Open Main Church" arms exit and switches session before navigating here.
+    if (
+      session &&
+      session.currentSystemId !== 'sys-main' &&
+      !peekExitToMainChurch()
+    ) {
+      return;
+    }
+    consumeExitToMainChurch();
     authService.setCurrentSystem('sys-main', 'main');
     refreshSession();
-  }, [refreshSession]);
+  }, [refreshSession, session, location.pathname]);
 
   const profilePath = account ? `/people/${account.personId}` : '/people';
   /** Access engine + systems registry — governance only (not regular members). */

@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ApprovalStepper } from '../components/ui/ApprovalStepper';
 import { StatusPill } from '../components/ui/StatusPill';
 import { canApproveEventLevel } from '../domain/eventScope';
 import { eventTypeLabel } from '../domain/permissions';
 import { PEOPLE } from '../data/seed';
+import { missionListPath } from '../navigation/missionPaths';
 import { missionService, systemsService } from '../services';
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const listPath = missionListPath(location.pathname, 'events');
   const { can, account, positions, roles, refreshSession } = useAuth();
   const [, setTick] = useState(0);
   const refresh = () => {
@@ -29,7 +32,7 @@ export function EventDetailPage() {
     return (
       <div className="panel">
         <p className="muted">No access.</p>
-        <Link to="/events">← Events</Link>
+        <Link to={listPath}>← Events</Link>
       </div>
     );
   }
@@ -37,7 +40,7 @@ export function EventDetailPage() {
     return (
       <div className="panel">
         <p>Event not found.</p>
-        <Link to="/events">← Events</Link>
+        <Link to={listPath}>← Events</Link>
       </div>
     );
   }
@@ -150,7 +153,7 @@ export function EventDetailPage() {
   return (
     <div className="stack">
       <p>
-        <Link to="/events">← Events</Link>
+        <Link to={listPath}>← Events</Link>
       </p>
       {msg && <p className="badge">{msg}</p>}
 

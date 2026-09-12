@@ -1179,10 +1179,14 @@ export const missionService = {
   },
 
   listProjects(filter?: {
+    ownerSystemId?: SystemId;
     viewerSystemId?: SystemId;
     viewOpts?: ViewOpts;
   }): ChurchProject[] {
     return PROJECTS.filter((p) => {
+      if (filter?.ownerSystemId && p.ownerSystemId !== filter.ownerSystemId) {
+        return false;
+      }
       if (filter?.viewerSystemId) {
         if (
           !missionItemVisibleTo(p, filter.viewerSystemId, {

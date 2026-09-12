@@ -28,6 +28,17 @@ npm run test:policy
 
 Expect: pastor ENTER any system via governance; pastor **denied** General Fund; treasurer **MANAGE** General Fund.
 
+## Production (Neon Postgres)
+
+Local stays on SQLite (`schema.prisma`). Deploy uses `schema.postgres.prisma`.
+
+```bash
+# With DATABASE_URL pointing at Neon:
+npm run setup:pg
+```
+
+Full Vercel + Render + Neon steps: [../DEPLOY.md](../DEPLOY.md).
+
 ## Setup
 
 ```bash

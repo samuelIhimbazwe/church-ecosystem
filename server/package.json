@@ -12,6 +12,12 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "db:generate:pg": "prisma generate --schema=prisma/schema.postgres.prisma",
+    "db:push:pg": "prisma db push --schema=prisma/schema.postgres.prisma",
+    "db:seed:pg": "tsx prisma/seed.ts",
+    "setup:pg": "npm run db:generate:pg && npm run db:push:pg && npm run db:seed:pg",
+    "build:render": "npm run db:generate:pg && npm run build",
+    "start:render": "npm run db:push:pg && npm run db:seed:pg && npm start",
     "test:policy": "tsx scripts/policy-smoke.ts"
   },
   "dependencies": {
@@ -21,6 +27,8 @@
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.5",
     "zod": "^4.1.5"
   },
   "devDependencies": {
@@ -29,8 +37,6 @@
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.13.3",
-    "prisma": "^6.16.2",
-    "tsx": "^4.20.5",
     "typescript": "~6.0.2"
   }
 }

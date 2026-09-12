@@ -16,6 +16,12 @@ Prototype SPA for **ADEPR Kacyiru**: Main Church hub + peer ministry systems + s
 
 **Member rule:** Regular members see a limited module allow-list; finance suites and leadership ops are board/treasurer (Choir uses its own office matrix).
 
+## Deploy (boss demo)
+
+See **[DEPLOY.md](./DEPLOY.md)** for Neon (Postgres) + Render (API) + Vercel (Web).
+
+Local work stays on SQLite; production uses `server/prisma/schema.postgres.prisma`.
+
 ## Run (prototype SPA)
 
 ```bash

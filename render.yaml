@@ -1,0 +1,26 @@
+# Render — ADEPR Kacyiru API
+# https://render.com/docs/blueprint-spec
+#
+# After first deploy: set JWT_SECRET and CORS_ORIGIN (your Vercel URL) in the dashboard.
+# DATABASE_URL comes from the Neon connection string (or Render Postgres if you prefer).
+
+services:
+  - type: web
+    name: kacyiru-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install --include=dev && npm run build:render
+    startCommand: npm run start:render
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false

@@ -76,6 +76,21 @@ const MEMBER_DEFAULT = [
   'mission',
   'programs',
   'events',
+  'tasks',
+  'projects',
+  'my-contributions',
+] as const;
+
+const MEMBER_MUSIC = [
+  'home',
+  'mission',
+  'schedule',
+  'schedule-published',
+  'schedule-inbox',
+  'programs',
+  'events',
+  'tasks',
+  'projects',
   'my-contributions',
 ] as const;
 
@@ -114,6 +129,7 @@ const PEER_OPS = [
   'programs',
   'events',
   'tasks',
+  'projects',
   'my-contributions',
 ] as const;
 
@@ -121,6 +137,7 @@ function memberModulesFor(systemId: SystemId): readonly string[] {
   if (systemId === 'sys-worship') return MEMBER_WORSHIP;
   if (systemId === 'sys-protocol') return MEMBER_PROTOCOL;
   if (systemId === 'sys-deacon') return MEMBER_DEACON;
+  if (systemId === 'sys-music') return MEMBER_MUSIC;
   if (systemId === 'sys-youth') return MEMBER_DEFAULT;
   return MEMBER_DEFAULT; // peer-core kit
 }
@@ -227,6 +244,29 @@ function boardModulesFor(
     ];
   }
   // Youth + peer kit — board ops; full money suite is treasurer-only
+  if (systemId === 'sys-music') {
+    if (office === 'TREASURER') {
+      return ['home', 'mission', 'my-contributions', ...FINANCE_SUITE];
+    }
+    if (office === 'SECRETARY') {
+      return [
+        ...PEER_OPS,
+        'schedule',
+        'schedule-drafts',
+        'schedule-published',
+        'schedule-inbox',
+      ];
+    }
+    return [
+      ...PEER_OPS,
+      'schedule',
+      'schedule-drafts',
+      'schedule-published',
+      'schedule-inbox',
+      'finance',
+      'reports',
+    ];
+  }
   if (office === 'PRESIDENT' || office === 'VP') {
     return [...PEER_OPS, 'finance', 'reports'];
   }
