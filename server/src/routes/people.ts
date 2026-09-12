@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { requireAuth, type AuthedRequest } from '../middleware/http.js';
+import {
+  pathParam,
+  requireAuth,
+  type AuthedRequest,
+} from '../middleware/http.js';
 
 export const peopleRouter = Router();
 
@@ -25,8 +29,13 @@ peopleRouter.get('/', requireAuth, async (req, res) => {
 });
 
 peopleRouter.get('/:id', requireAuth, async (req, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const person = await prisma.person.findUnique({
-    where: { id: req.params.id },
+    where: { id },
     include: {
       memberships: true,
       positions: true,

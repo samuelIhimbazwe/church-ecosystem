@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { requireAuth, type AuthedRequest } from '../middleware/http.js';
+import {
+  pathParam,
+  requireAuth,
+  type AuthedRequest,
+} from '../middleware/http.js';
 
 export const fundsRouter = Router();
 
@@ -57,8 +61,13 @@ fundsRouter.get('/', requireAuth, async (req: AuthedRequest, res) => {
 
 fundsRouter.get('/:fundId', requireAuth, async (req: AuthedRequest, res) => {
   const personId = req.auth!.personId;
+  const fundId = pathParam(req, 'fundId');
+  if (!fundId) {
+    res.status(400).json({ error: 'Missing fundId' });
+    return;
+  }
   const fund = await prisma.fund.findUnique({
-    where: { id: req.params.fundId },
+    where: { id: fundId },
     include: { orgUnit: true, grants: true },
   });
   if (!fund) {

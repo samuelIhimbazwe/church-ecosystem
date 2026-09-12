@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { requireAuth } from '../middleware/http.js';
+import { pathParam, requireAuth } from '../middleware/http.js';
 
 export const systemsRouter = Router();
 
@@ -15,8 +15,13 @@ systemsRouter.get('/', requireAuth, async (_req, res) => {
 });
 
 systemsRouter.get('/:id', requireAuth, async (req, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const system = await prisma.churchSystem.findUnique({
-    where: { id: req.params.id },
+    where: { id },
   });
   if (!system) {
     res.status(404).json({ error: 'System not found' });

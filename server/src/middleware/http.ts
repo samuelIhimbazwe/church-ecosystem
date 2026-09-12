@@ -3,6 +3,17 @@ import { verifyAccessToken, type JwtPayload } from '../lib/auth.js';
 
 export type AuthedRequest = Request & { auth?: JwtPayload };
 
+/** Express 5 types params as string | string[]; Prisma needs a single string. */
+export function pathParam(
+  req: Request,
+  name: string,
+): string | undefined {
+  const raw = req.params[name];
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0];
+  return undefined;
+}
+
 export function requireAuth(
   req: AuthedRequest,
   res: Response,

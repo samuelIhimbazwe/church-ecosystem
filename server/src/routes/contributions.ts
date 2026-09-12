@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authorizePerson } from '../policy/index.js';
-import { requireAuth, type AuthedRequest } from '../middleware/http.js';
+import {
+  pathParam,
+  requireAuth,
+  type AuthedRequest,
+} from '../middleware/http.js';
 
 export const contributionsRouter = Router();
 
@@ -212,8 +216,14 @@ contributionsRouter.post(
       return;
     }
 
+    const id = pathParam(req, 'id');
+    if (!id) {
+      res.status(400).json({ error: 'Missing id' });
+      return;
+    }
+
     const claim = await prisma.contributionClaim.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
     if (!claim) {
       res.status(404).json({ error: 'Claim not found' });

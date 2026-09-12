@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authorizePerson } from '../policy/index.js';
-import { requireAuth, type AuthedRequest } from '../middleware/http.js';
+import {
+  pathParam,
+  requireAuth,
+  type AuthedRequest,
+} from '../middleware/http.js';
 
 export const missionRouter = Router();
 
@@ -46,8 +50,13 @@ missionRouter.get('/programs', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 missionRouter.get('/programs/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const program = await prisma.program.findUnique({
-    where: { id: req.params.id },
+    where: { id },
   });
   if (!program) {
     res.status(404).json({ error: 'Program not found' });
@@ -146,8 +155,13 @@ missionRouter.get('/events', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 missionRouter.get('/events/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const event = await prisma.churchEvent.findUnique({
-    where: { id: req.params.id },
+    where: { id },
   });
   if (!event) {
     res.status(404).json({ error: 'Event not found' });
@@ -245,8 +259,13 @@ missionRouter.get('/tasks', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 missionRouter.get('/tasks/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const task = await prisma.workTask.findUnique({
-    where: { id: req.params.id },
+    where: { id },
   });
   if (!task) {
     res.status(404).json({ error: 'Task not found' });
@@ -339,8 +358,13 @@ missionRouter.get('/projects', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 missionRouter.get('/projects/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const id = pathParam(req, 'id');
+  if (!id) {
+    res.status(400).json({ error: 'Missing id' });
+    return;
+  }
   const project = await prisma.churchProject.findUnique({
-    where: { id: req.params.id },
+    where: { id },
   });
   if (!project) {
     res.status(404).json({ error: 'Project not found' });
