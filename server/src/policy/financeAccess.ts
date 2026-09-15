@@ -39,14 +39,7 @@ export function fundGrantsToPermissions(
   );
   if (mine.length === 0) return grants;
 
-  grants.push({
-    systemId: 'sys-finance',
-    resource: 'SYSTEM',
-    action: 'ENTER',
-    source: 'FUND_GRANT',
-    reason: 'Has at least one org-issued fund grant',
-  });
-
+  // Fund ACL only — Finance is a shared module, not a peer system to ENTER.
   for (const g of mine) {
     grants.push({
       systemId: 'sys-finance',
