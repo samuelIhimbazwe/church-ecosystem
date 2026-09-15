@@ -3,14 +3,18 @@ import { type ReactNode, useEffect, useId, useRef } from 'react';
 export function Drawer({
   open,
   title,
+  subtitle,
   onClose,
   children,
+  footer,
   wide,
 }: {
   open: boolean;
   title: string;
+  subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
   wide?: boolean;
 }) {
   const titleId = useId();
@@ -45,10 +49,12 @@ export function Drawer({
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const t = window.setTimeout(() => {
-      const closeBtn = panelRef.current?.querySelector<HTMLElement>(
-        '.drawer-head button',
+      const firstField = panelRef.current?.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])',
       );
-      (closeBtn ?? panelRef.current)?.focus();
+      (firstField ??
+        panelRef.current?.querySelector<HTMLElement>('.drawer-head button') ??
+        panelRef.current)?.focus();
     }, 20);
     return () => {
       window.clearTimeout(t);
@@ -78,12 +84,16 @@ export function Drawer({
         tabIndex={-1}
       >
         <div className="drawer-head">
-          <h3 id={titleId}>{title}</h3>
+          <div className="drawer-head-text">
+            <h3 id={titleId}>{title}</h3>
+            {subtitle ? <p className="drawer-subtitle">{subtitle}</p> : null}
+          </div>
           <button type="button" className="btn ghost sm" onClick={onClose}>
             Close
           </button>
         </div>
         <div className="drawer-body">{children}</div>
+        {footer ? <div className="drawer-footer">{footer}</div> : null}
       </div>
     </div>
   );
