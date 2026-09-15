@@ -84,6 +84,8 @@ export function resourceLabel(resource: Resource): string {
     DEACON_FINANCE: 'Deacon contributions & finance',
     MINISTRY_FINANCE: 'Ministry contributions & finance',
     AUDIT: 'Access audit',
+    SYSTEM_CONFIG: 'System administration (config)',
+    BOARD: 'Board of Directors',
   };
   return map[resource];
 }
@@ -137,6 +139,9 @@ export const PERMISSION_PROBES: Array<{ resource: Resource; action: Action }> = 
   { resource: 'PROTOCOL_SCHEDULE', action: 'VIEW' },
   { resource: 'PROTOCOL_SCHEDULE', action: 'MANAGE' },
   { resource: 'AUDIT', action: 'VIEW' },
+  { resource: 'BOARD', action: 'VIEW' },
+  { resource: 'BOARD', action: 'MANAGE' },
+  { resource: 'SYSTEM_CONFIG', action: 'MANAGE' },
 ];
 
 export function isTaskActive(task: WorkTask, now = new Date()): boolean {
