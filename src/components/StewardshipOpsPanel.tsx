@@ -201,25 +201,74 @@ export function StewardshipOpsPanel({
                 <div>
                   <strong>{l.label}</strong>{' '}
                   <span className="muted">{formatRwf(l.plannedAmount)}</span>
-                  {l.frozen && <span className="badge">FROZEN</span>}
+                  {l.frozen && (
+                    <span className="badge" title="Frozen">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                        style={{
+                          verticalAlign: '-1px',
+                          marginRight: '0.25rem',
+                        }}
+                      >
+                        <path
+                          fill="currentColor"
+                          d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm-3 5a3 3 0 0 1 6 0v3H9V6Zm3 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
+                        />
+                      </svg>
+                      FROZEN
+                    </span>
+                  )}
                 </div>
                 {editable && (
                   <div className="row">
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => {
-                        missionService.setBudgetLineFrozen(
-                          kind,
-                          id,
-                          l.id,
-                          !l.frozen,
-                        );
-                        onChanged();
-                      }}
-                    >
-                      {l.frozen ? 'Unfreeze' : 'Freeze'}
-                    </button>
+                    {l.frozen ? (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        title="Locked — unfreeze requires amend note"
+                        onClick={() => {
+                          const note = window.prompt(
+                            'Amend note to unfreeze this line (required):',
+                            l.amendNote ?? '',
+                          );
+                          if (note === null) return;
+                          const r = missionService.setBudgetLineFrozen(
+                            kind,
+                            id,
+                            l.id,
+                            false,
+                            { amendNote: note },
+                          );
+                          setMsg(
+                            r.ok ? 'Line unfrozen' : (r.reason ?? 'Failed'),
+                          );
+                          if (r.ok) onChanged();
+                        }}
+                      >
+                        Locked · Unfreeze…
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        title="Freeze / lock this line"
+                        onClick={() => {
+                          const r = missionService.setBudgetLineFrozen(
+                            kind,
+                            id,
+                            l.id,
+                            true,
+                          );
+                          setMsg(r.ok ? 'Line frozen' : (r.reason ?? 'Failed'));
+                          if (r.ok) onChanged();
+                        }}
+                      >
+                        Freeze
+                      </button>
+                    )}
                   </div>
                 )}
               </li>
