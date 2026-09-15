@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import type { ProtocolAttendanceStatus } from '../../domain/types';
+import { useListSelection } from '../../hooks/useListSelection';
 import { financeService, protocolService } from '../../services';
 
 const SYS = 'sys-protocol' as const;
@@ -722,12 +723,7 @@ export function ProtocolHistoryPage() {
   const { can } = useAuth();
   const canView = can('PROTOCOL_SCHEDULE', 'VIEW', SYS);
   const history = protocolService.listHistory();
-  const [selectedId, setSelectedId] = useState<string | null>(
-    history[0]?.id ?? null,
-  );
-  const selected = selectedId
-    ? protocolService.getHistoryVersion(selectedId)
-    : null;
+  const { selectedId, selected, setSelectedId } = useListSelection(history);
 
   if (!canView) {
     return (
@@ -756,7 +752,19 @@ export function ProtocolHistoryPage() {
           </thead>
           <tbody>
             {history.map((h) => (
-              <tr key={h.id}>
+              <tr
+                key={h.id}
+                className={selectedId === h.id ? 'people-row selected' : 'people-row'}
+                onClick={() => setSelectedId(h.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedId(h.id);
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+              >
                 <td>{h.monthKey}</td>
                 <td>v{h.version}</td>
                 <td>{new Date(h.publishedAt).toLocaleString()}</td>
@@ -765,8 +773,12 @@ export function ProtocolHistoryPage() {
                 <td>
                   <button
                     type="button"
-                    className="btn ghost"
-                    onClick={() => setSelectedId(h.id)}
+                    className={`btn ghost${selectedId === h.id ? ' active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedId(h.id);
+                    }}
+                    aria-pressed={selectedId === h.id}
                   >
                     View
                   </button>
