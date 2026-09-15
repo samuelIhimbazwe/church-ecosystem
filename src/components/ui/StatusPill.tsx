@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import { statusLabel, statusTone } from '../../domain/statusCopy';
+
+export { EmptyState, ForbiddenState } from './EmptyState';
 
 const TONE_BY_STATUS: Record<string, string> = {
   ACTIVE: 'success',
@@ -40,55 +43,12 @@ export function StatusPill({
 }) {
   const resolved =
     tone ??
+    (status ? statusTone(status) : undefined) ??
     (status ? TONE_BY_STATUS[status] : undefined) ??
     'neutral';
   return (
     <span className={`status-pill ${resolved}`}>
-      {children ?? status ?? '—'}
+      {children ?? (status ? statusLabel(status) : '—')}
     </span>
-  );
-}
-
-export function EmptyState({
-  title,
-  detail,
-  action,
-}: {
-  title: string;
-  detail?: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="empty-state">
-      <strong>{title}</strong>
-      {detail && <p className="muted">{detail}</p>}
-      {action && <div className="empty-action">{action}</div>}
-    </div>
-  );
-}
-
-export function ForbiddenState({
-  resource,
-  action = 'VIEW',
-  detail,
-}: {
-  resource: string;
-  action?: string;
-  detail?: string;
-}) {
-  return (
-    <div className="forbidden-state">
-      <strong>No access</strong>
-      <p className="muted">
-        {detail ?? (
-          <>
-            You need <code>
-              {resource} / {action}
-            </code>{' '}
-            in this system.
-          </>
-        )}
-      </p>
-    </div>
   );
 }
