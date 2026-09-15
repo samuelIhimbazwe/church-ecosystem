@@ -18,6 +18,7 @@ import {
   MF_SPONSORSHIPS,
   MF_TYPES,
 } from '../data/ministryFinanceSeed';
+import { POSITIONS } from '../data/seed';
 import {
   apiSubmitContribution,
   apiVerifyContribution,
@@ -358,6 +359,19 @@ export const ministryFinanceService = {
         projectId: c.projectId,
         note: input.note,
       });
+      void import('../api/missionApi')
+        .then(({ apiApplyDesignatedGift }) =>
+          apiApplyDesignatedGift({
+            amount,
+            label: `Contribution · ${this.typeLabel(input.systemId, c.typeId)}`,
+            fundId,
+            donationId: c.id,
+            programId: c.programId,
+            projectId: c.projectId,
+            note: input.note,
+          }),
+        )
+        .catch(() => undefined);
       if (tagged.warnings?.length) {
         return { ok: true, reason: tagged.warnings.join('; ') };
       }
@@ -494,14 +508,167 @@ export const ministryFinanceService = {
     );
   },
 
+  budgetPlannedTotals(systemId: SystemId, budgetId: string) {
+    const lines = this.listBudgetLines(systemId, budgetId);
+    return {
+      plannedIncome: lines
+        .filter((l) => l.side === 'INCOME')
+        .reduce((s, l) => s + l.plannedAmount, 0),
+      plannedExpense: lines
+        .filter((l) => l.side === 'EXPENSE')
+        .reduce((s, l) => s + l.plannedAmount, 0),
+    };
+  },
+
   listIncome(systemId: SystemId) {
-    return MF_INCOME.filter((r) => r.systemId === systemId);
+    return MF_INCOME.filter((r) => r.systemId === systemId).sort((a, b) =>
+      b.occurredOn.localeCompare(a.occurredOn),
+    );
   },
 
   listExpenses(systemId: SystemId) {
-    return MF_EXPENSES.filter((r) => r.systemId === systemId);
+    return MF_EXPENSES.filter((r) => r.systemId === systemId).sort((a, b) =>
+      b.occurredOn.localeCompare(a.occurredOn),
+    );
   },
 
+  recordIncome(input: {
+    systemId: SystemId;
+    actorPersonId: string;
+    category: string;
+    amount: number;
+    occurredOn: string;
+    description: string;
+    budgetId?: string;
+  }): ActionResult {
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      return { ok: false, reason: 'Amount must be positive' };
+    }
+    const fundId = this.fundIdFor(input.systemId);
+    if (!fundId) return { ok: false, reason: 'No fund vault' };
+    const id = nid('mf-inc');
+    const posted = financeService.recordMinistryFundIncome({
+      actorPersonId: input.actorPersonId,
+      fundId,
+      amount: Math.round(input.amount),
+      description: `Income · ${input.category} · ${input.description}`,
+      occurredOn: input.occurredOn,
+      contributionId: id,
+    });
+    if (!posted.ok) return { ok: false, reason: posted.reason };
+    MF_INCOME.unshift({
+      id,
+      systemId: input.systemId,
+      category: input.category,
+      amount: Math.round(input.amount),
+      occurredOn: input.occurredOn,
+      description: input.description,
+      recordedByPersonId: input.actorPersonId,
+      budgetId: input.budgetId,
+      financeTxnId: posted.txnId,
+    });
+    return { ok: true, id };
+  },
+
+  /** Submit expense for approval (does not hit the fund until approved). */
+  submitExpense(input: {
+    systemId: SystemId;
+    actorPersonId: string;
+    category: string;
+    amount: number;
+    occurredOn: string;
+    description: string;
+    programId?: string;
+    projectId?: string;
+  }): ActionResult {
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      return { ok: false, reason: 'Amount must be positive' };
+    }
+    const id = nid('mf-exp');
+    MF_EXPENSES.unshift({
+      id,
+      systemId: input.systemId,
+      category: input.category,
+      amount: Math.round(input.amount),
+      occurredOn: input.occurredOn,
+      description: input.description,
+      status: 'PENDING',
+      recordedByPersonId: input.actorPersonId,
+      programId: input.programId,
+      projectId: input.projectId,
+    });
+    return { ok: true, id };
+  },
+
+  approveExpense(
+    systemId: SystemId,
+    expenseId: string,
+    actorPersonId: string,
+    approve: boolean,
+  ): ActionResult {
+    const e = MF_EXPENSES.find(
+      (x) => x.id === expenseId && x.systemId === systemId,
+    );
+    if (!e) return { ok: false, reason: 'Unknown expense' };
+    if (e.status !== 'PENDING') {
+      return { ok: false, reason: 'Already processed' };
+    }
+    if (!approve) {
+      e.status = 'REJECTED';
+      e.approvedByPersonId = actorPersonId;
+      return { ok: true };
+    }
+    const fundId = this.fundIdFor(systemId);
+    if (!fundId) return { ok: false, reason: 'No fund vault' };
+    const posted = financeService.recordMinistryFundExpense({
+      actorPersonId,
+      fundId,
+      amount: e.amount,
+      description: `Expense · ${e.category} · ${e.description}`,
+      occurredOn: e.occurredOn,
+      expenseId: e.id,
+    });
+    if (!posted.ok) return { ok: false, reason: posted.reason };
+    e.status = 'APPROVED';
+    e.approvedByPersonId = actorPersonId;
+    e.financeTxnId = posted.txnId;
+    // W2: tagged spend → stewardship.usedCost (seed + fire-and-forget API).
+    if (e.programId || e.projectId) {
+      if (e.programId) {
+        const s = missionService.stewardshipOf('PROGRAM', e.programId);
+        if (s) {
+          missionService.setUsedCost(
+            'PROGRAM',
+            e.programId,
+            (Number(s.usedCost) || 0) + e.amount,
+          );
+        }
+      }
+      if (e.projectId) {
+        const s = missionService.stewardshipOf('PROJECT', e.projectId);
+        if (s) {
+          missionService.setUsedCost(
+            'PROJECT',
+            e.projectId,
+            (Number(s.usedCost) || 0) + e.amount,
+          );
+        }
+      }
+      void import('../api/missionApi')
+        .then(({ apiIncrementUsedCost }) =>
+          apiIncrementUsedCost({
+            amount: e.amount,
+            programId: e.programId,
+            projectId: e.projectId,
+            expenseId: e.id,
+          }),
+        )
+        .catch(() => undefined);
+    }
+    return { ok: true };
+  },
+
+  /** Legacy: submit + approve in one step when actor can post to fund. */
   recordExpense(input: {
     systemId: SystemId;
     actorPersonId: string;
@@ -510,31 +677,14 @@ export const ministryFinanceService = {
     occurredOn: string;
     description: string;
   }): ActionResult {
-    const fundId = this.fundIdFor(input.systemId);
-    if (!fundId) return { ok: false, reason: 'No fund vault' };
-    const id = nid('mf-exp');
-    const posted = financeService.recordMinistryFundExpense({
-      actorPersonId: input.actorPersonId,
-      fundId,
-      amount: Math.round(input.amount),
-      description: `Expense · ${input.category} · ${input.description}`,
-      occurredOn: input.occurredOn,
-      expenseId: id,
-    });
-    if (!posted.ok) return { ok: false, reason: posted.reason };
-    MF_EXPENSES.unshift({
-      id,
-      systemId: input.systemId,
-      category: input.category,
-      amount: Math.round(input.amount),
-      occurredOn: input.occurredOn,
-      description: input.description,
-      status: 'APPROVED',
-      recordedByPersonId: input.actorPersonId,
-      approvedByPersonId: input.actorPersonId,
-      financeTxnId: posted.txnId,
-    });
-    return { ok: true, id };
+    const submitted = this.submitExpense(input);
+    if (!submitted.ok || !submitted.id) return submitted;
+    return this.approveExpense(
+      input.systemId,
+      submitted.id,
+      input.actorPersonId,
+      true,
+    );
   },
 
   listAssets(systemId: SystemId) {
@@ -547,25 +697,106 @@ export const ministryFinanceService = {
     category: string;
     value: number;
     acquiredOn: string;
+    assignedToPersonId?: string;
   }): ActionResult {
+    if (!Number.isFinite(input.value) || input.value < 0) {
+      return { ok: false, reason: 'Value must be zero or positive' };
+    }
+    if (!input.name.trim()) return { ok: false, reason: 'Name required' };
     const id = nid('mf-asset');
     MF_ASSETS.unshift({
       id,
       systemId: input.systemId,
-      name: input.name,
-      category: input.category,
+      name: input.name.trim(),
+      category: input.category.trim() || 'Equipment',
       value: Math.round(input.value),
       acquiredOn: input.acquiredOn,
+      assignedToPersonId: input.assignedToPersonId,
       status: 'ACTIVE',
     });
     return { ok: true, id };
+  },
+
+  assignAsset(
+    systemId: SystemId,
+    assetId: string,
+    assignedToPersonId: string | undefined,
+  ): ActionResult {
+    const a = MF_ASSETS.find(
+      (x) => x.id === assetId && x.systemId === systemId,
+    );
+    if (!a) return { ok: false, reason: 'Unknown asset' };
+    if (a.status !== 'ACTIVE') return { ok: false, reason: 'Asset not active' };
+    a.assignedToPersonId = assignedToPersonId;
+    a.historyNote = assignedToPersonId
+      ? `Assigned to ${personLabel(assignedToPersonId)}`
+      : 'Unassigned';
+    return { ok: true };
+  },
+
+  disposeAsset(systemId: SystemId, assetId: string): ActionResult {
+    const a = MF_ASSETS.find(
+      (x) => x.id === assetId && x.systemId === systemId,
+    );
+    if (!a) return { ok: false, reason: 'Unknown asset' };
+    if (a.status !== 'ACTIVE') return { ok: false, reason: 'Already disposed' };
+    a.status = 'DISPOSED';
+    a.assignedToPersonId = undefined;
+    a.historyNote = 'Disposed';
+    return { ok: true };
   },
 
   listLiabilities(systemId: SystemId) {
     return MF_LIABILITIES.filter((l) => l.systemId === systemId);
   },
 
+  addLiability(input: {
+    systemId: SystemId;
+    name: string;
+    amount: number;
+    dueDate: string;
+    notes?: string;
+  }): ActionResult {
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      return { ok: false, reason: 'Amount must be positive' };
+    }
+    if (!input.name.trim()) return { ok: false, reason: 'Name required' };
+    const id = nid('mf-liab');
+    MF_LIABILITIES.unshift({
+      id,
+      systemId: input.systemId,
+      name: input.name.trim(),
+      amount: Math.round(input.amount),
+      dueDate: input.dueDate,
+      status: 'OPEN',
+      notes: input.notes,
+    });
+    return { ok: true, id };
+  },
+
+  closeLiability(systemId: SystemId, liabilityId: string): ActionResult {
+    const l = MF_LIABILITIES.find(
+      (x) => x.id === liabilityId && x.systemId === systemId,
+    );
+    if (!l) return { ok: false, reason: 'Unknown liability' };
+    if (l.status !== 'OPEN') return { ok: false, reason: 'Already closed' };
+    l.status = 'CLOSED';
+    return { ok: true };
+  },
+
   personLabel,
+
+  /** Board / office holders for asset assignment pickers. */
+  assigneesFor(systemId: SystemId): Array<{ id: string; label: string }> {
+    const ids = [
+      ...new Set(
+        POSITIONS.filter(
+          (p) => p.systemId === systemId && p.status === 'ACTIVE',
+        ).map((p) => p.personId),
+      ),
+    ];
+    return ids.map((id) => ({ id, label: personLabel(id) }));
+  },
 
   ledgerCsv(systemId: SystemId) {
     const rows = this.listContributions(systemId);
@@ -578,17 +809,85 @@ export const ministryFinanceService = {
     return [header, ...lines].join('\n');
   },
 
-  reports(systemId: SystemId) {
+  financeReport(systemId: SystemId) {
     const summary = this.contributionSummary(systemId);
-    const donations = this.listDonations(systemId);
-    const expenses = this.listExpenses(systemId);
-    const assets = this.listAssets(systemId);
+    const donations = this.listDonations(systemId).reduce(
+      (s, d) => s + d.amount,
+      0,
+    );
+    const sponsorships = this.listSponsorships(systemId).reduce(
+      (s, d) => s + d.amount,
+      0,
+    );
+    const campaignRaised = this.listCampaignGifts(systemId).reduce(
+      (s, g) => s + g.amount,
+      0,
+    );
+    const otherIncome = this.listIncome(systemId).reduce(
+      (s, r) => s + r.amount,
+      0,
+    );
+    const expensesApproved = this.listExpenses(systemId)
+      .filter((e) => e.status === 'APPROVED')
+      .reduce((s, e) => s + e.amount, 0);
+    const expensesPending = this.listExpenses(systemId)
+      .filter((e) => e.status === 'PENDING')
+      .reduce((s, e) => s + e.amount, 0);
+    const assets = this.listAssets(systemId)
+      .filter((a) => a.status === 'ACTIVE')
+      .reduce((s, a) => s + a.value, 0);
+    const liabilities = this.listLiabilities(systemId)
+      .filter((l) => l.status === 'OPEN')
+      .reduce((s, l) => s + l.amount, 0);
     return {
-      ...summary,
-      donationTotal: donations.reduce((s, d) => s + d.amount, 0),
-      expenseTotal: expenses.reduce((s, e) => s + e.amount, 0),
-      assetTotal: assets.reduce((s, a) => s + a.value, 0),
+      contributionsConfirmed: summary.confirmed,
+      contributionsPending: summary.pendingAmount,
+      donations,
+      sponsorships,
+      campaignRaised,
+      otherIncome,
+      expensesApproved,
+      expensesPending,
+      assets,
+      liabilities,
+      fundBalance: summary.fundBalance,
+      netAssets: assets - liabilities,
       openFollowUps: this.listFollowUps(systemId, true).length,
+      fundId: summary.fundId,
+    };
+  },
+
+  financeReportCsv(systemId: SystemId): string {
+    const r = this.financeReport(systemId);
+    return [
+      'metric,amount_rwf',
+      `contributions_confirmed,${r.contributionsConfirmed}`,
+      `contributions_pending,${r.contributionsPending}`,
+      `donations,${r.donations}`,
+      `sponsorships,${r.sponsorships}`,
+      `campaign_raised,${r.campaignRaised}`,
+      `other_income,${r.otherIncome}`,
+      `expenses_approved,${r.expensesApproved}`,
+      `expenses_pending,${r.expensesPending}`,
+      `assets,${r.assets}`,
+      `liabilities_open,${r.liabilities}`,
+      `fund_balance,${r.fundBalance}`,
+      `net_assets,${r.netAssets}`,
+    ].join('\n');
+  },
+
+  /** @deprecated Prefer financeReport — kept for older callers. */
+  reports(systemId: SystemId) {
+    const r = this.financeReport(systemId);
+    return {
+      confirmed: r.contributionsConfirmed,
+      pendingAmount: r.contributionsPending,
+      fundBalance: r.fundBalance,
+      fundId: r.fundId,
+      donationTotal: r.donations,
+      expenseTotal: r.expensesApproved,
+      assetTotal: r.assets,
+      openFollowUps: r.openFollowUps,
     };
   },
 };
