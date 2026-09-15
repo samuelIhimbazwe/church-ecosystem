@@ -921,7 +921,6 @@ export type ChoirDutyRole =
   | 'CONDUCTOR'
   | 'SOLOIST'
   | 'SECTION_LEAD'
-  | 'USHER'
   | 'SOUND';
 
 export interface ChoirDutySlot {
@@ -1492,6 +1491,17 @@ export type BoardMeetingStatus = 'SCHEDULED' | 'HELD' | 'CANCELLED';
 
 export type BoardDecisionStatus = 'OPEN' | 'DONE';
 
+/** Progress / result notes on an open Board follow-up (owner reports; Leader reviews). */
+export type BoardFollowUpUpdateKind = 'PROGRESS' | 'RESULT' | 'BLOCKER';
+
+export interface BoardFollowUpUpdate {
+  id: string;
+  at: string;
+  byPersonId: string;
+  note: string;
+  kind: BoardFollowUpUpdateKind;
+}
+
 export interface BoardDecision {
   id: string;
   summary: string;
@@ -1500,6 +1510,12 @@ export interface BoardDecision {
   status: BoardDecisionStatus;
   /** Optional link to a mission task id when follow-up is tracked in Tasks. */
   followUpTaskId?: string;
+  /** Running progress from the owner (or helpers) — Leader reviews before Mark done. */
+  progressUpdates?: BoardFollowUpUpdate[];
+  /** Final outcome acknowledged when marked DONE. */
+  resultSummary?: string;
+  completedAt?: string;
+  completedByPersonId?: string;
 }
 
 export interface BoardMeeting {
@@ -1530,6 +1546,8 @@ export interface BoardAgendaItem {
   id: string;
   text: string;
   state: BoardAgendaItemState;
+  /** Longer context for the Leader / Board (why this is on the agenda). */
+  detail?: string;
   /** Who brought the big/new item (catechist / pastor / officer). */
   raisedByPersonId?: string;
   decidedAt?: string;
