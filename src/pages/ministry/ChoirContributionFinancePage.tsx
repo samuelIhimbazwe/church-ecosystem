@@ -20,7 +20,7 @@ import {
   CHOIR_FUND_FLOW_PROFILE,
   countByStage,
 } from '../../domain/fundFlow';
-import type { ChoirContribution, ChoirPaymentMethod } from '../../domain/types';
+import type { ChoirContribution } from '../../domain/types';
 import {
   choirContributionOps,
   choirService,
@@ -298,7 +298,7 @@ function GoalsPanel({
         if (!p) {
           return (
             <div key={d.id} className="panel">
-              <strong>{d.title}</strong>
+              <strong>{d.name}</strong>
               <p className="muted" style={{ margin: '0.35rem 0 0' }}>
                 Progress not available for your office on this drive.
               </p>
@@ -831,10 +831,6 @@ function OversightPanel({
       )}
     </div>
   );
-}
-
-function isOversightBtn(office: ReturnType<typeof choirService.officeFor>) {
-  return office === 'TREASURER' || office === 'COORDINATOR';
 }
 
 function CreateDrivePanel({
