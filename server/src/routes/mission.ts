@@ -23,6 +23,11 @@ function parseJsonArray(raw: string | null | undefined): string[] {
   }
 }
 
+function toJsonArray(ids: string[] | undefined): string | undefined {
+  if (!ids?.length) return undefined;
+  return JSON.stringify(ids);
+}
+
 missionRouter.get('/programs', requireAuth, async (req: AuthedRequest, res) => {
   const ownerSystemId =
     typeof req.query.ownerSystemId === 'string'
@@ -222,6 +227,8 @@ const eventCreateSchema = z.object({
   location: z.string().optional(),
   status: z.string().optional(),
   capacity: z.number().int().positive().optional(),
+  registrationMode: z.string().optional(),
+  beyondOwnerScope: z.boolean().optional(),
   programId: z.string().optional(),
   projectId: z.string().optional(),
   willSpend: z.boolean().optional(),
@@ -255,6 +262,9 @@ missionRouter.post('/events', requireAuth, async (req: AuthedRequest, res) => {
     res.status(403).json({ error: decision.reason });
     return;
   }
+  const status =
+    parsed.data.status ??
+    (parsed.data.beyondOwnerScope ? 'PENDING_APPROVAL' : 'CONFIRMED');
   const event = await prisma.churchEvent.create({
     data: {
       name: parsed.data.name,
@@ -265,8 +275,10 @@ missionRouter.post('/events', requireAuth, async (req: AuthedRequest, res) => {
       startsAt: new Date(parsed.data.startsAt),
       endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) : undefined,
       location: parsed.data.location,
-      status: parsed.data.status ?? 'DRAFT',
+      status,
       capacity: parsed.data.capacity,
+      registrationMode: parsed.data.registrationMode,
+      beyondOwnerScope: parsed.data.beyondOwnerScope ?? false,
       programId: parsed.data.programId,
       projectId: parsed.data.projectId,
       createdByPersonId: req.auth!.personId,
@@ -342,6 +354,7 @@ const taskCreateSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   ownerPersonId: z.string().optional(),
+  helperPersonIds: z.array(z.string()).optional(),
   systemId: z.string().optional(),
   visibility: z
     .enum([
@@ -378,18 +391,25 @@ missionRouter.post('/tasks', requireAuth, async (req: AuthedRequest, res) => {
     res.status(403).json({ error: decision.reason });
     return;
   }
+  const ownerPersonId = parsed.data.ownerPersonId ?? req.auth!.personId;
+  const helpers = (parsed.data.helperPersonIds ?? []).filter(
+    (id) => id && id !== ownerPersonId,
+  );
+  const rawContext = parsed.data.contextType ?? 'NONE';
+  const contextType = rawContext === 'GENERAL' ? 'NONE' : rawContext;
   const task = await prisma.workTask.create({
     data: {
       title: parsed.data.title,
       description: parsed.data.description,
-      ownerPersonId: parsed.data.ownerPersonId ?? req.auth!.personId,
+      ownerPersonId,
+      helperPersonIds: toJsonArray(helpers),
       createdByPersonId: req.auth!.personId,
       systemId,
       visibility: toStoredVisibility(parsed.data.visibility),
       status: parsed.data.status ?? 'TODO',
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
       grantsSystemAccess: parsed.data.grantsSystemAccess ?? false,
-      contextType: parsed.data.contextType ?? 'GENERAL',
+      contextType,
       contextId: parsed.data.contextId,
       contextLabel: parsed.data.contextLabel,
     },
@@ -481,12 +501,18 @@ const projectCreateSchema = z.object({
   fundId: z.string().optional(),
   programId: z.string().optional(),
   beyondOwnerScope: z.boolean().optional(),
+  leadPersonId: z.string().optional(),
+  collaboratorSystemIds: z.array(z.string()).optional(),
 });
 
 missionRouter.post('/projects', requireAuth, async (req: AuthedRequest, res) => {
   const parsed = projectCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
+    return;
+  }
+  if (parsed.data.willSpend && !parsed.data.fundId) {
+    res.status(400).json({ error: 'Spending projects require a fundId' });
     return;
   }
   const decision = await authorizePerson({
@@ -510,6 +536,8 @@ missionRouter.post('/projects', requireAuth, async (req: AuthedRequest, res) => 
       fundId: parsed.data.fundId,
       programId: parsed.data.programId,
       beyondOwnerScope: parsed.data.beyondOwnerScope ?? false,
+      leadPersonId: parsed.data.leadPersonId,
+      collaboratorSystemIds: toJsonArray(parsed.data.collaboratorSystemIds),
       createdByPersonId: req.auth!.personId,
     },
   });
@@ -517,6 +545,8 @@ missionRouter.post('/projects', requireAuth, async (req: AuthedRequest, res) => 
     project: {
       ...project,
       visibility: toStoredVisibility(project.visibility),
+      collaboratorSystemIds: parseJsonArray(project.collaboratorSystemIds),
+      collaboratorPersonIds: parseJsonArray(project.collaboratorPersonIds),
     },
   });
 });
