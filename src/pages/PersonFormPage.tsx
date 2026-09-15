@@ -55,7 +55,6 @@ export function PersonFormPage() {
   const baptism = id ? peopleService.baptism(id) : null;
   const [bapOn, setBapOn] = useState(baptism?.baptizedOn ?? '');
   const [bapPlace, setBapPlace] = useState(baptism?.place ?? '');
-  const [bapMode, setBapMode] = useState(baptism?.mode ?? 'IMMERSION');
   const [bapMinister, setBapMinister] = useState(baptism?.ministerName ?? '');
   const [bapCert, setBapCert] = useState(baptism?.certificateRef ?? '');
   const [bapNotes, setBapNotes] = useState(baptism?.notes ?? '');
@@ -160,7 +159,7 @@ export function PersonFormPage() {
       personId: id,
       baptizedOn: bapOn,
       place: bapPlace || undefined,
-      mode: bapMode,
+      mode: 'IMMERSION',
       ministerName: bapMinister || undefined,
       certificateRef: bapCert || undefined,
       notes: bapNotes || undefined,
@@ -417,34 +416,17 @@ export function PersonFormPage() {
       {tab === 'baptism' && id && canViewFullRecord && (
         <form className="panel stack" onSubmit={onSaveBaptism}>
           <p className="muted" style={{ marginTop: 0 }}>
-            One baptism record per person (upsert)
+            One baptism record per person (upsert). Mode is immersion only.
           </p>
-          <div className="grid-2">
-            <TextField
-              label="Baptized on"
-              name="bapOn"
-              id="bapOn"
-              type="date"
-              value={bapOn}
-              onChange={(e) => setBapOn(e.target.value)}
-              required
-            />
-            <SelectField
-              label="Mode"
-              name="bapMode"
-              id="bapMode"
-              value={bapMode}
-              onChange={(e) =>
-                setBapMode(
-                  e.target.value as 'IMMERSION' | 'POURING' | 'OTHER',
-                )
-              }
-            >
-              <option value="IMMERSION">Immersion</option>
-              <option value="POURING">Pouring</option>
-              <option value="OTHER">Other</option>
-            </SelectField>
-          </div>
+          <TextField
+            label="Baptized on"
+            name="bapOn"
+            id="bapOn"
+            type="date"
+            value={bapOn}
+            onChange={(e) => setBapOn(e.target.value)}
+            required
+          />
           <TextField
             label="Place"
             name="bapPlace"
