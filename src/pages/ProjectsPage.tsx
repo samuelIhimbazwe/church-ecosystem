@@ -1,7 +1,18 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import {
+  WorkItemViews,
+  WorkViewToggle,
+  type WorkViewMode,
+} from '../components/WorkItemViews';
 import { Drawer } from '../components/ui/Drawer';
+import {
+  CheckboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
@@ -9,10 +20,11 @@ import {
   StatusPill,
 } from '../components/ui/StatusPill';
 import type { MissionVisibility, SystemId } from '../domain/types';
+import { projectToWorkItem } from '../domain/workItem';
 import { useProjectsList } from '../hooks/useMissionLists';
 import {
   financeService,
-  isChurchLeadership,
+  isChurchLeader,
   missionService,
   peopleService,
   systemsService,
@@ -29,9 +41,10 @@ export function ProjectsPage() {
   const [msg, setMsg] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [view, setView] = useState<WorkViewMode>('list');
   const canView = can('PROJECT', 'VIEW');
   const canManage = can('PROJECT', 'MANAGE');
-  const churchLead = isChurchLeadership(roles);
+  const churchLead = isChurchLeader(roles);
 
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
@@ -143,8 +156,6 @@ export function ProjectsPage() {
     <div className="stack">
       <div className="panel">
         <PageHead
-          title="Projects"
-          subtitle="Draft → approve → SETUP (PLANNED) → run. Beyond-scope uses the approval chain; spend links a fund vault."
           actions={
             canManage ? (
               <button
@@ -162,46 +173,49 @@ export function ProjectsPage() {
           <span className="badge">{pending.length} pending</span>
         </div>
         <div style={{ marginTop: '0.75rem' }}>
-          <FilterBar
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { value: 'all', label: 'All', count: projects.length },
-              {
-                value: 'draft',
-                label: 'Draft',
-                count: projects.filter((p) => p.status === 'DRAFT').length,
-              },
-              { value: 'pending', label: 'Pending', count: pending.length },
-              {
-                value: 'setup',
-                label: 'Setup',
-                count: projects.filter((p) => p.status === 'PLANNED').length,
-              },
-              {
-                value: 'paused',
-                label: 'Paused',
-                count: projects.filter((p) => p.status === 'PAUSED').length,
-              },
-              {
-                value: 'closing',
-                label: 'Closing',
-                count: projects.filter((p) => p.status === 'CLOSING').length,
-              },
-              {
-                value: 'active',
-                label: 'Active',
-                count: projects.filter((p) => p.status === 'ACTIVE').length,
-              },
-              {
-                value: 'done',
-                label: 'Closed',
-                count: projects.filter(
-                  (p) => p.status === 'DONE' || p.status === 'CANCELLED',
-                ).length,
-              },
-            ]}
-          />
+          <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+            <FilterBar
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: 'All', count: projects.length },
+                {
+                  value: 'draft',
+                  label: 'Draft',
+                  count: projects.filter((p) => p.status === 'DRAFT').length,
+                },
+                { value: 'pending', label: 'Pending', count: pending.length },
+                {
+                  value: 'setup',
+                  label: 'Setup',
+                  count: projects.filter((p) => p.status === 'PLANNED').length,
+                },
+                {
+                  value: 'paused',
+                  label: 'Paused',
+                  count: projects.filter((p) => p.status === 'PAUSED').length,
+                },
+                {
+                  value: 'closing',
+                  label: 'Closing',
+                  count: projects.filter((p) => p.status === 'CLOSING').length,
+                },
+                {
+                  value: 'active',
+                  label: 'Active',
+                  count: projects.filter((p) => p.status === 'ACTIVE').length,
+                },
+                {
+                  value: 'done',
+                  label: 'Closed',
+                  count: projects.filter(
+                    (p) => p.status === 'DONE' || p.status === 'CANCELLED',
+                  ).length,
+                },
+              ]}
+            />
+            <WorkViewToggle value={view} onChange={setView} />
+          </div>
         </div>
       </div>
 
@@ -235,117 +249,102 @@ export function ProjectsPage() {
         wide
       >
         <form className="stack" onSubmit={onCreate}>
-          <div className="field">
-            <label>Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Lead (recommended)</label>
-            <select
-              value={leadId}
-              onChange={(e) => setLeadId(e.target.value)}
-            >
-              <option value="">None yet</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.preferredName ?? p.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Collaborating system</label>
-            <select
-              value={collabSys}
-              onChange={(e) => setCollabSys(e.target.value as SystemId | '')}
-            >
-              <option value="">None</option>
-              {systems.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.shortName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Parent programme (optional)</label>
-            <select
-              value={programId}
-              onChange={(e) => setProgramId(e.target.value)}
-            >
-              <option value="">None</option>
-              {programs.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Visibility</label>
-            <select
-              value={vis}
-              onChange={(e) => setVis(e.target.value as MissionVisibility)}
-            >
-              <option value="CHURCH">General church</option>
-              <option value="MINISTRY_PRIVATE">Private</option>
-              <option value="SELECTIVE">Selective</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Description</label>
-            <input value={desc} onChange={(e) => setDesc(e.target.value)} />
-          </div>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={beyond}
-              onChange={(e) => setBeyond(e.target.checked)}
-            />
-            Beyond owner scope (needs upper approvals)
-          </label>
+          <TextField
+            label="Name"
+            name="proj-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <SelectField
+            label="Lead (recommended)"
+            name="proj-lead"
+            value={leadId}
+            onChange={(e) => setLeadId(e.target.value)}
+          >
+            <option value="">None yet</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.preferredName ?? p.fullName}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Collaborating system"
+            name="proj-collab"
+            value={collabSys}
+            onChange={(e) => setCollabSys(e.target.value as SystemId | '')}
+          >
+            <option value="">None</option>
+            {systems.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.shortName}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Parent programme (optional)"
+            name="proj-program"
+            value={programId}
+            onChange={(e) => setProgramId(e.target.value)}
+          >
+            <option value="">None</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Visibility"
+            name="proj-vis"
+            value={vis}
+            onChange={(e) => setVis(e.target.value as MissionVisibility)}
+          >
+            <option value="CHURCH">General church</option>
+            <option value="MINISTRY_PRIVATE">Private</option>
+            <option value="SELECTIVE">Selective</option>
+          </SelectField>
+          <TextAreaField
+            label="Description"
+            name="proj-desc"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            rows={3}
+          />
+          <CheckboxField
+            label="Beyond owner scope (needs upper approvals)"
+            checked={beyond}
+            onChange={setBeyond}
+          />
           {churchLead && !beyond && (
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={fastTrack}
-                onChange={(e) => setFastTrack(e.target.checked)}
-              />
-              Fast-track ACTIVE (Church Leader only)
-            </label>
-          )}
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={willSpend}
-              onChange={(e) => setWillSpend(e.target.checked)}
+            <CheckboxField
+              label="Fast-track ACTIVE (Church Leader only)"
+              checked={fastTrack}
+              onChange={setFastTrack}
             />
-            Will spend / has budget (fund required)
-          </label>
+          )}
+          <CheckboxField
+            label="Will spend / has budget (fund required)"
+            checked={willSpend}
+            onChange={setWillSpend}
+          />
           {willSpend && (
-            <div className="field">
-              <label>Fund</label>
-              <select
-                value={fundId}
-                onChange={(e) => setFundId(e.target.value)}
-                required
-              >
-                <option value="">Select fund…</option>
-                {funds.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.code})
-                  </option>
-                ))}
-              </select>
-              <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-                Spending still requires a Treasurer FundAccessGrant on the
-                vault.
-              </p>
-            </div>
+            <SelectField
+              label="Fund"
+              name="proj-fund"
+              value={fundId}
+              onChange={(e) => setFundId(e.target.value)}
+              required
+              hint="Spending still requires a Treasurer FundAccessGrant on the vault."
+            >
+              <option value="">Select fund…</option>
+              {funds.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name} ({f.code})
+                </option>
+              ))}
+            </SelectField>
           )}
           <button type="submit" className="btn">
             Create project
@@ -354,7 +353,13 @@ export function ProjectsPage() {
       </Drawer>
 
       <div className="panel">
-        {filtered.length === 0 ? (
+        {view !== 'list' ? (
+          <WorkItemViews
+            items={filtered.map((p) => projectToWorkItem(p))}
+            view={view}
+            emptyTitle="No projects match"
+          />
+        ) : filtered.length === 0 ? (
           <EmptyState
             title="No projects match"
             detail={
