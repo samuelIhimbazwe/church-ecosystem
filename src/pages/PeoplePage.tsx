@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { membershipTypeLabel, roleLabel } from '../domain/access';
+import { roleLabel } from '../domain/access';
 import { useAuth } from '../auth/AuthContext';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import { TextField } from '../components/ui/Field';
@@ -14,9 +14,9 @@ import {
 import { useListSelection } from '../hooks/useListSelection';
 import type { Person } from '../domain/types';
 import {
+  buildPersonParticipationPlaces,
   participationService,
   peopleService,
-  systemsService,
 } from '../services';
 import { pastoralOpsService } from '../services/pastoralOpsService';
 
@@ -83,9 +83,16 @@ export function PeoplePage() {
   const positions = selected
     ? participationService.activePositions(selected.id)
     : [];
+  const assignments = selected
+    ? participationService.activeAssignments(selected.id)
+    : [];
   const roles = selected ? participationService.rolesFor(selected.id) : [];
-  const entitlements = selected
-    ? participationService.entitlementsFor(selected.id)
+  const places = selected
+    ? buildPersonParticipationPlaces({
+        memberships,
+        positions,
+        assignments,
+      })
     : [];
 
   return (
@@ -195,7 +202,7 @@ export function PeoplePage() {
                   memberships={memberships}
                   positions={positions}
                   roles={roles}
-                  entitlements={entitlements}
+                  places={places}
                   canManagePeople={canManagePeople}
                 />
               ) : null
@@ -252,18 +259,16 @@ function PersonDetail({
   memberships,
   positions,
   roles,
-  entitlements,
+  places,
   canManagePeople,
 }: {
   person: Person;
   memberships: ReturnType<typeof participationService.activeMemberships>;
   positions: ReturnType<typeof participationService.activePositions>;
   roles: ReturnType<typeof participationService.rolesFor>;
-  entitlements: ReturnType<typeof participationService.entitlementsFor>;
+  places: ReturnType<typeof buildPersonParticipationPlaces>;
   canManagePeople: boolean;
 }) {
-  const ministryEntries = entitlements.filter((e) => e.systemId !== 'sys-main');
-
   return (
     <div className="people-detail">
       <p className="hero-kicker" style={{ marginTop: 0 }}>
@@ -286,50 +291,35 @@ function PersonDetail({
         ))}
       </div>
 
-      <h4 className="people-detail-section">Memberships</h4>
-      {memberships.length === 0 ? (
+      <h4 className="people-detail-section">Where they participate</h4>
+      {places.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
-          None active
+          No memberships, positions, or assignments on file
         </p>
       ) : (
-        <ul className="rail-list">
-          {memberships.slice(0, 5).map((m) => (
-            <li key={m.id}>{m.label || membershipTypeLabel(m.type)}</li>
-          ))}
-        </ul>
-      )}
-
-      <h4 className="people-detail-section">Positions</h4>
-      {positions.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          None active
-        </p>
-      ) : (
-        <ul className="rail-list">
-          {positions.slice(0, 5).map((p) => (
-            <li key={p.id}>
-              {p.title}
-              {p.systemRole ? ` · ${roleLabel(p.systemRole)}` : ''}
+        <ul className="rail-list people-place-list">
+          {places.map((place) => (
+            <li key={place.key}>
+              <strong>{place.placeName}</strong>
+              {place.roles.length > 0 && (
+                <div className="muted">
+                  Role · {place.roles.join(' · ')}
+                </div>
+              )}
+              {place.lines.slice(0, 3).map((line) => (
+                <div key={line} className="muted" style={{ fontSize: '0.85rem' }}>
+                  {line}
+                </div>
+              ))}
             </li>
           ))}
         </ul>
       )}
 
-      <h4 className="people-detail-section">Ministries they can enter</h4>
-      {ministryEntries.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          Main Church only
+      {(memberships.length > 0 || positions.length > 0) && (
+        <p className="muted" style={{ margin: '0.75rem 0 0', fontSize: '0.85rem' }}>
+          Full membership and position lists are on the profile.
         </p>
-      ) : (
-        <ul className="rail-list">
-          {ministryEntries.slice(0, 6).map((e) => (
-            <li key={e.systemId}>
-              {systemsService.getById(e.systemId)?.shortName ??
-                systemsService.getById(e.systemId)?.name ??
-                'Ministry'}
-            </li>
-          ))}
-        </ul>
       )}
 
       <div className="row" style={{ marginTop: '1.1rem' }}>
