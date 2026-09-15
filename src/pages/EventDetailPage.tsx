@@ -1,13 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { ApprovalStepper } from '../components/ui/ApprovalStepper';
+import { ApprovalRecord } from '../components/ui/ApprovalRecord';
 import { StatusPill } from '../components/ui/StatusPill';
 import { canApproveEventLevel } from '../domain/eventScope';
+import {
+  checkedInCount,
+  eventOperatingState,
+  eventOpStateLabel,
+  eventPrimaryVerbs,
+  expectedCheckIn,
+  offerWindowLabel,
+  seatedCount,
+  waitlistCount,
+} from '../domain/eventOps';
+import { checkInToken, checkInUrl, qrImageUrl } from '../domain/checkInQr';
+import { statusLabel } from '../domain/statusCopy';
 import { eventTypeLabel } from '../domain/permissions';
 import { PEOPLE } from '../data/seed';
 import { missionListPath } from '../navigation/missionPaths';
 import { missionService, systemsService } from '../services';
+import {
+  hydrateEventRegistrationsFromApi,
+  writeAddEventCollaboratorPerson,
+  writeAddEventCollaboratorSystem,
+  writeApproveEventLevel,
+  writeCancelEventRegistration,
+  writeCompleteEvent,
+  writeEventNextSteps,
+  writeMarkEventAttendance,
+  writePatchEvent,
+  writeRegisterForEvent,
+  writeSubmitEvent,
+} from '../services/missionWrite';
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,8 +41,11 @@ export function EventDetailPage() {
   const { can, account, positions, roles, refreshSession } = useAuth();
   const [, setTick] = useState(0);
   const refresh = () => {
-    setTick((t) => t + 1);
-    refreshSession();
+    void (async () => {
+      if (id) await hydrateEventRegistrationsFromApi(id);
+      setTick((t) => t + 1);
+      refreshSession();
+    })();
   };
   const [msg, setMsg] = useState('');
   const [nextPersonId, setNextPersonId] = useState('');
@@ -26,6 +54,18 @@ export function EventDetailPage() {
   const [collabSys, setCollabSys] = useState('');
   const [collabPerson, setCollabPerson] = useState('');
   const [linkProjectId, setLinkProjectId] = useState('');
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const hydrated = await hydrateEventRegistrationsFromApi(id);
+      if (!cancelled && hydrated) setTick((t) => t + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const event = id ? missionService.getEvent(id) : null;
   if (!account || !can('EVENT', 'VIEW')) {
@@ -65,8 +105,8 @@ export function EventDetailPage() {
     return p?.preferredName ?? p?.fullName ?? pid;
   }
 
-  function doApprove(levelKey: string) {
-    const r = missionService.approveEventLevel({
+  async function doApprove(levelKey: string) {
+    const r = await writeApproveEventLevel({
       eventId: event!.id,
       levelKey,
       personId: account!.personId,
@@ -77,8 +117,8 @@ export function EventDetailPage() {
     refresh();
   }
 
-  function doRegister() {
-    const r = missionService.registerForEvent({
+  async function doRegister() {
+    const r = await writeRegisterForEvent({
       eventId: event!.id,
       personId: account!.personId,
     });
@@ -86,8 +126,25 @@ export function EventDetailPage() {
     refresh();
   }
 
-  function doAttend(personId: string, attended: boolean) {
-    const r = missionService.markEventAttendance({
+  async function doCancel(personId: string) {
+    const r = await writeCancelEventRegistration({
+      eventId: event!.id,
+      personId,
+    });
+    setMsg(
+      r.ok
+        ? r.promoted
+          ? `Cancelled — promoted ${personName(
+              (r.promoted as { personId: string }).personId,
+            )} from waitlist`
+          : 'Registration cancelled'
+        : (r.reason ?? 'Failed'),
+    );
+    refresh();
+  }
+
+  async function doAttend(personId: string, attended: boolean) {
+    const r = await writeMarkEventAttendance({
       eventId: event!.id,
       personId,
       attended,
@@ -96,19 +153,53 @@ export function EventDetailPage() {
     refresh();
   }
 
-  function doComplete() {
-    missionService.completeEvent(event!.id);
-    setMsg('Event completed — apply next steps below');
+  async function doComplete() {
+    await writeCompleteEvent(event!.id);
+    setMsg('Event completed — unmarked seats → no-show · apply follow-up below');
     refresh();
   }
 
-  function doNextSteps() {
+  async function doStartDeliver() {
+    const r = await writePatchEvent(event!.id, { lifecyclePhase: 'DELIVER' });
+    setMsg(r.ok ? 'Lifecycle → Deliver (live)' : (r.reason ?? 'Failed'));
+    refresh();
+  }
+
+  async function doEnterClose() {
+    const r = await writePatchEvent(event!.id, { lifecyclePhase: 'CLOSE' });
+    setMsg(
+      r.ok
+        ? 'Entered close-out — finish check-in then complete'
+        : (r.reason ?? 'Failed'),
+    );
+    refresh();
+  }
+
+  async function doSubmit() {
+    const r = await writeSubmitEvent(event!.id);
+    setMsg(r.ok ? 'Submitted' : (r.reason ?? 'Failed'));
+    refresh();
+  }
+
+  async function doSetPhase(phase: 'PREPARE' | 'DELIVER' | 'CLOSE') {
+    const r = await writePatchEvent(event!.id, { lifecyclePhase: phase });
+    setMsg(
+      r.ok
+        ? phase === 'CLOSE'
+          ? 'Entered close-out'
+          : `Phase → ${statusLabel(phase)}`
+        : (r.reason ?? 'Failed'),
+    );
+    refresh();
+  }
+
+  async function doNextSteps() {
     if (!nextPersonId) return;
     const suggestBaptism =
       event!.type === 'BAPTISM' && enrollProgram
         ? 'prg-baptism-standing'
         : undefined;
-    const r = missionService.applyEventNextSteps({
+    const r = await writeEventNextSteps({
       personId: nextPersonId,
       eventId: event!.id,
       enrollProgramId: suggestBaptism,
@@ -127,9 +218,18 @@ export function EventDetailPage() {
     refresh();
   }
 
-  const activeRegs = regs.filter(
-    (r) => r.status === 'REGISTERED' || r.status === 'ATTENDED',
-  ).length;
+  const activeRegs = seatedCount(regs);
+  const waitlisted = waitlistCount(regs);
+  const expected = expectedCheckIn(regs);
+  const checked = checkedInCount(regs);
+  const opState = eventOperatingState(event);
+  const canApproveAny = chain.some((level) =>
+    canApproveEventLevel(level, roles, positions),
+  );
+  const verbs = eventPrimaryVerbs(opState, {
+    canManage,
+    canApprove: canApproveAny,
+  });
   const capPct =
     event.capacity && event.capacity > 0
       ? Math.min(100, Math.round((activeRegs / event.capacity) * 100))
@@ -166,8 +266,36 @@ export function EventDetailPage() {
             </p>
             <h2>{event.name}</h2>
           </div>
-          <StatusPill status={event.status}>{event.status}</StatusPill>
+          <StatusPill status={event.status} />
         </div>
+        <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+          Operating · <strong>{eventOpStateLabel(opState)}</strong>
+          {event.lifecyclePhase
+            ? ` · ${statusLabel(event.lifecyclePhase)}`
+            : ''}
+        </p>
+        {verbs.length > 0 && (
+          <div className="row" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            {verbs.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (v.id === 'submit') void doSubmit();
+                  else if (v.id === 'start') void doStartDeliver();
+                  else if (v.id === 'close') void doEnterClose();
+                  else if (v.id === 'complete') void doComplete();
+                  else if (v.id === 'approve') {
+                    document.getElementById('approvals')?.scrollIntoView();
+                  }
+                }}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="hero-when">
           {new Date(event.startsAt).toLocaleString()}
           {event.location ? ` · ${event.location}` : ''}
@@ -215,10 +343,39 @@ export function EventDetailPage() {
       </div>
 
       <div className="panel stack">
+        <h3 style={{ margin: 0 }}>Check-in QR</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          Staff scan or open the link to mark attendance.
+        </p>
+        <div className="row" style={{ alignItems: 'flex-start', gap: '1rem' }}>
+          <img
+            src={qrImageUrl(checkInUrl('event', event.id))}
+            alt="Check-in QR"
+            width={160}
+            height={160}
+          />
+          <div>
+            <p style={{ marginTop: 0 }}>
+              <Link
+                to={`/check-in?k=event&id=${encodeURIComponent(event.id)}&t=${encodeURIComponent(
+                  checkInToken('event', event.id),
+                )}`}
+              >
+                Open check-in page →
+              </Link>
+            </p>
+            <p className="muted" style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>
+              {checkInUrl('event', event.id)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel stack">
         <h3 style={{ margin: 0 }}>Lifecycle</h3>
         <p className="muted" style={{ margin: 0 }}>
-          Prepare → deliver → close. Current:{' '}
-          <strong>{event.lifecyclePhase ?? 'PREPARE'}</strong>
+          Same as the operating verbs above — prepare → deliver → close-out.
+          Current: <strong>{statusLabel(event.lifecyclePhase ?? 'PREPARE')}</strong>
         </p>
         <div className="row">
           {(['PREPARE', 'DELIVER', 'CLOSE'] as const).map((phase) => (
@@ -229,19 +386,9 @@ export function EventDetailPage() {
                 (event.lifecyclePhase ?? 'PREPARE') === phase ? '' : 'ghost'
               }`}
               disabled={!canManage}
-              onClick={() => {
-                const r = missionService.setEventLifecycle(event.id, phase);
-                setMsg(
-                  r.ok
-                    ? phase === 'CLOSE'
-                      ? 'Event closed'
-                      : `Phase → ${phase}`
-                    : (r.reason ?? 'Failed'),
-                );
-                refresh();
-              }}
+              onClick={() => void doSetPhase(phase)}
             >
-              {phase}
+              {statusLabel(phase)}
             </button>
           ))}
         </div>
@@ -291,13 +438,13 @@ export function EventDetailPage() {
               type="button"
               className="btn secondary"
               disabled={!collabSys}
-              onClick={() => {
-                missionService.addEventCollaboratorSystem(
+              onClick={async () => {
+                const r = await writeAddEventCollaboratorSystem(
                   event.id,
                   collabSys as typeof event.ownerSystemId,
                 );
                 setCollabSys('');
-                setMsg('Collaborator system added');
+                setMsg(r.ok ? 'Collaborator system added' : (r.reason ?? 'Failed'));
                 refresh();
               }}
             >
@@ -318,13 +465,13 @@ export function EventDetailPage() {
               type="button"
               className="btn secondary"
               disabled={!collabPerson}
-              onClick={() => {
-                missionService.addEventCollaboratorPerson(
+              onClick={async () => {
+                const r = await writeAddEventCollaboratorPerson(
                   event.id,
                   collabPerson,
                 );
                 setCollabPerson('');
-                setMsg('Collaborator person added');
+                setMsg(r.ok ? 'Collaborator person added' : (r.reason ?? 'Failed'));
                 refresh();
               }}
             >
@@ -396,8 +543,16 @@ export function EventDetailPage() {
           <p className="muted" style={{ marginTop: 0 }}>
             Every level must approve before the event is confirmed.
           </p>
-          <ApprovalStepper
+          <ApprovalRecord
+            routeLabel="Beyond owner scope · event chain"
+            gateHint="Every level must approve before the event is confirmed."
             completeHint="All levels approved — event is confirmed."
+            timeline={(event.approvals ?? []).map((a) => ({
+              id: `${a.levelKey}-${a.approvedAt}`,
+              at: a.approvedAt.slice(0, 10),
+              label: a.label,
+              detail: personName(a.personId),
+            }))}
             steps={chain.map((level) => {
               const done = (event.approvals ?? []).some(
                 (a) => a.levelKey === level.levelKey,
@@ -431,73 +586,158 @@ export function EventDetailPage() {
         <div className="panel">
           <h3>Registration</h3>
           <p className="muted" style={{ marginTop: 0 }}>
-            {
-              regs.filter(
-                (r) => r.status === 'REGISTERED' || r.status === 'ATTENDED',
-              ).length
-            }
-            {event.capacity ? ` / ${event.capacity}` : ''} registered
+            {activeRegs}
+            {event.capacity ? ` / ${event.capacity}` : ''} seated
+            {waitlisted > 0 ? ` · ${waitlisted} waitlisted` : ''}
           </p>
-          {!myReg ? (
+          {!myReg || myReg.status === 'CANCELLED' ? (
             <button type="button" className="btn" onClick={doRegister}>
               Register myself
             </button>
           ) : (
-            <p className="badge">You are {myReg.status.toLowerCase()}</p>
+            <div className="row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+              <p className="badge" style={{ margin: 0 }}>
+                You are {myReg.status.toLowerCase()}
+                {offerWindowLabel(myReg) ? ` · ${offerWindowLabel(myReg)}` : ''}
+              </p>
+              {myReg.status !== 'ATTENDED' && (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void doCancel(account.personId)}
+                >
+                  Cancel my spot
+                </button>
+              )}
+            </div>
           )}
-          {regs.length > 0 && (
+          {regs.filter((r) => r.status !== 'CANCELLED').length > 0 && (
             <table className="table" style={{ marginTop: '0.75rem' }}>
               <thead>
                 <tr>
                   <th>Person</th>
                   <th>Status</th>
-                  <th>Attended</th>
+                  <th>Offer</th>
                   {canManage && <th />}
                 </tr>
               </thead>
               <tbody>
-                {regs.map((r) => (
-                  <tr key={r.id}>
-                    <td>{personName(r.personId)}</td>
-                    <td>{r.status}</td>
-                    <td>{r.attendedAt ? 'Yes' : '—'}</td>
-                    {canManage && (
+                {regs
+                  .filter((r) => r.status !== 'CANCELLED')
+                  .map((r) => (
+                    <tr key={r.id}>
+                      <td>{personName(r.personId)}</td>
                       <td>
-                        {r.status !== 'CANCELLED' &&
-                          r.status !== 'ATTENDED' && (
+                        <StatusPill status={r.status} />
+                      </td>
+                      <td className="muted">
+                        {offerWindowLabel(r) ?? '—'}
+                      </td>
+                      {canManage && (
+                        <td>
+                          {r.status !== 'ATTENDED' && (
                             <button
                               type="button"
                               className="btn ghost"
-                              onClick={() => doAttend(r.personId, true)}
+                              onClick={() => void doCancel(r.personId)}
                             >
-                              Mark attended
+                              Cancel
                             </button>
                           )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           )}
         </div>
       )}
 
-      {canManage && event.status === 'CONFIRMED' && (
+      {regMode === 'REGISTRATION_REQUIRED' &&
+        canManage &&
+        (event.status === 'CONFIRMED' ||
+          event.lifecyclePhase === 'DELIVER' ||
+          event.status === 'COMPLETED') && (
+          <div className="panel">
+            <h3>Check-in</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              {checked} checked in · {expected.length} expected
+              {expected.length - checked > 0
+                ? ` · ${expected.length - checked} remaining`
+                : ''}
+            </p>
+            {expected.length === 0 ? (
+              <p className="muted">No seated registrations yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {expected.map((r) => (
+                    <tr key={r.id}>
+                      <td>{personName(r.personId)}</td>
+                      <td>
+                        <StatusPill status={r.status} />
+                      </td>
+                      <td>
+                        {r.status !== 'ATTENDED' && r.status !== 'NO_SHOW' && (
+                          <span className="row" style={{ gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => void doAttend(r.personId, true)}
+                            >
+                              Check in
+                            </button>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              onClick={() => void doAttend(r.personId, false)}
+                            >
+                              No-show
+                            </button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+      {canManage &&
+        (event.status === 'CONFIRMED' || opState === 'LIVE' || opState === 'CLOSING') && (
         <div className="panel">
           <h3>Complete event</h3>
-          <button type="button" className="btn" onClick={doComplete}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Remaining REGISTERED seats become NO_SHOW. Then use follow-up enroll.
+          </p>
+          <button type="button" className="btn" onClick={() => void doComplete()}>
             Mark completed
           </button>
         </div>
       )}
 
-      {event.status === 'COMPLETED' && canManage && (
+      {(event.status === 'COMPLETED' ||
+        (canManage && event.lifecyclePhase === 'CLOSE')) && (
         <div className="panel">
-          <h3>Option B — guided next steps</h3>
+          <h3>
+            {event.status === 'COMPLETED'
+              ? 'Post-event follow-up'
+              : 'Close-out follow-up'}
+          </h3>
           <p className="muted" style={{ marginTop: 0 }}>
-            After attendance, suggest follow-up (e.g. Baptism → Baptism class).
-            Creates a Church-scope follow-up task for you.
+            {event.status === 'COMPLETED'
+              ? 'Guided next steps for people who attended (enroll + follow-up task).'
+              : 'Finish check-in, then complete the event — or start follow-up for anyone already attended.'}
           </p>
           {event.type === 'BAPTISM' && (
             <label className="row">
@@ -514,17 +754,10 @@ export function EventDetailPage() {
               value={nextPersonId}
               onChange={(e) => setNextPersonId(e.target.value)}
             >
-              <option value="">Select person…</option>
+              <option value="">Select attended person…</option>
               {regs
                 .filter((r) => r.status === 'ATTENDED' || r.attendedAt)
                 .map((r) => (
-                  <option key={r.id} value={r.personId}>
-                    {personName(r.personId)}
-                  </option>
-                ))}
-              {regs.filter((r) => r.status === 'ATTENDED' || r.attendedAt)
-                .length === 0 &&
-                regs.map((r) => (
                   <option key={r.id} value={r.personId}>
                     {personName(r.personId)}
                   </option>
@@ -533,12 +766,17 @@ export function EventDetailPage() {
             <button
               type="button"
               className="btn"
-              disabled={!nextPersonId}
-              onClick={doNextSteps}
+              disabled={!nextPersonId || event.status !== 'COMPLETED'}
+              onClick={() => void doNextSteps()}
             >
               Apply next steps
             </button>
           </div>
+          {event.status !== 'COMPLETED' && (
+            <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>
+              Complete the event to unlock next-steps writes.
+            </p>
+          )}
         </div>
       )}
     </div>
