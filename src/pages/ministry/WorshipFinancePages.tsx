@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { Drawer } from '../../components/ui/Drawer';
+import { SelectField, TextField } from '../../components/ui/Field';
 import { FilterBar, PageHead } from '../../components/ui/FilterBar';
 import {
   EmptyState,
@@ -224,7 +225,7 @@ export function WorshipFinancePage() {
         </div>
         {canVerifyFund && (
           <p className="muted" style={{ marginBottom: 0, marginTop: '0.65rem' }}>
-            <Link to="/systems/finance/funds/fund-worship">
+            <Link to="/systems/worship/finance">
               Open Worship fund ledger →
             </Link>
           </p>
@@ -373,12 +374,30 @@ export function WorshipFinancePage() {
         <h3 style={{ marginTop: 0 }}>Contribution ledger</h3>
         {filtered.length === 0 ? (
           <EmptyState
-            title="No contributions match"
-            detail="Members submit claims from My contributions."
+            title={
+              all.length > 0
+                ? 'No contributions match'
+                : 'No contributions'
+            }
+            detail={
+              all.length > 0
+                ? 'This status filter is empty. Switch to All to see the ledger.'
+                : 'Members submit claims from My contributions.'
+            }
             action={
-              <Link to="/systems/worship/my-contributions" className="btn">
-                Submit claim
-              </Link>
+              all.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setStatusFilter('all')}
+                >
+                  Show all
+                </button>
+              ) : (
+                <Link to="/systems/worship/my-contributions" className="btn">
+                  Submit claim
+                </Link>
+              )
             }
           />
         ) : (
@@ -537,76 +556,64 @@ export function WorshipMyContributionsPage() {
         onClose={() => setCreateOpen(false)}
       >
         <form className="stack" onSubmit={onSubmit}>
-          <div className="field">
-            <label htmlFor="ctype">Type</label>
-            <select
-              id="ctype"
-              value={typeId}
-              onChange={(e) => {
-                setTypeId(e.target.value);
-                const t = types.find((x) => x.id === e.target.value);
-                if (t?.defaultAmount) setAmount(String(t.defaultAmount));
-              }}
-            >
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="amt">Amount (RWF)</label>
-            <input
-              id="amt"
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="pm">Payment method</label>
-            <select
-              id="pm"
-              value={method}
-              onChange={(e) => setMethod(e.target.value as WorshipPaymentMethod)}
-            >
-              {methods.map((m) => (
-                <option key={m.id} value={m.method}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="od">Date</label>
-            <input
-              id="od"
-              type="date"
-              value={occurredOn}
-              onChange={(e) => setOccurredOn(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="note">Note</label>
-            <input
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="ev">Evidence note</label>
-            <input
-              id="ev"
-              value={evidenceNote}
-              onChange={(e) => setEvidenceNote(e.target.value)}
-              placeholder="e.g. MoMo ref …"
-            />
-          </div>
+          <SelectField
+            label="Type"
+            id="ctype"
+            value={typeId}
+            onChange={(e) => {
+              setTypeId(e.target.value);
+              const t = types.find((x) => x.id === e.target.value);
+              if (t?.defaultAmount) setAmount(String(t.defaultAmount));
+            }}
+          >
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </SelectField>
+          <TextField
+            label="Amount (RWF)"
+            id="amt"
+            type="number"
+            min={1}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+          <SelectField
+            label="Payment method"
+            id="pm"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as WorshipPaymentMethod)}
+          >
+            {methods.map((m) => (
+              <option key={m.id} value={m.method}>
+                {m.label}
+              </option>
+            ))}
+          </SelectField>
+          <TextField
+            label="Date"
+            id="od"
+            type="date"
+            value={occurredOn}
+            onChange={(e) => setOccurredOn(e.target.value)}
+            required
+          />
+          <TextField
+            label="Note"
+            id="note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <TextField
+            label="Evidence note"
+            id="ev"
+            value={evidenceNote}
+            onChange={(e) => setEvidenceNote(e.target.value)}
+            placeholder="e.g. MoMo ref …"
+          />
           <button type="submit" className="btn">
             Submit claim
           </button>
