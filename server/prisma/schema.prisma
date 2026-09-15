@@ -215,12 +215,69 @@ model Program {
   createdByPersonId String?
   approvedByPersonId String?
   approvedAt        DateTime?
-  /// Optional JSON stewardship blob (money/delivery/ops) — SPA is source of truth until hydrated.
+  /// JSON stewardship blob (money/delivery/ops). Versioned via stewardshipVersion.
   stewardshipJson   String?
+  stewardshipVersion Int     @default(1)
+  /// JSON: roles, eligibility, leaderPersonIds
+  metaJson          String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  activities        ProgramActivity[]
+  enrollments       ProgramEnrollment[]
+
   @@index([ownerSystemId, status])
+}
+
+model ProgramActivity {
+  id              String    @id @default(cuid())
+  programId       String
+  title           String
+  startsAt        DateTime
+  endsAt          DateTime?
+  location        String?
+  sessionClosedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  program     Program              @relation(fields: [programId], references: [id], onDelete: Cascade)
+  attendances ActivityAttendance[]
+
+  @@index([programId, startsAt])
+}
+
+model ProgramEnrollment {
+  id        String    @id @default(cuid())
+  programId String
+  personId  String
+  role      String    @default("PARTICIPANT") // LEADER | PARTICIPANT
+  roleKey   String?
+  status    String    @default("ACTIVE") // ACTIVE | COMPLETED | WITHDRAWN | ENDED
+  enrolledOn DateTime @default(now())
+  endedOn   DateTime?
+  completedOn DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, personId])
+  @@index([personId, status])
+}
+
+model ActivityAttendance {
+  id         String   @id @default(cuid())
+  activityId String
+  personId   String
+  status     String   // PRESENT | ABSENT | LATE | EXCUSED
+  recordedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  activity ProgramActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, personId])
+  @@index([personId])
 }
 
 model ChurchEvent {
@@ -244,11 +301,49 @@ model ChurchEvent {
   collaboratorSystemIds String? // JSON array
   collaboratorPersonIds String? // JSON array
   lifecyclePhase       String?  @default("PREPARE")
+  /// JSON array of EventApprovalRecord
+  approvalsJson        String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  registrations EventRegistration[]
+
   @@index([ownerSystemId, startsAt])
   @@index([projectId])
+}
+
+model EventRegistration {
+  id           String    @id @default(cuid())
+  eventId      String
+  personId     String
+  status       String    @default("REGISTERED") // REGISTERED | WAITLIST | CANCELLED | ATTENDED | NO_SHOW
+  registeredOn DateTime  @default(now())
+  attendedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  event ChurchEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, personId])
+  @@index([personId, status])
+}
+
+model MissionShare {
+  id                String    @id @default(cuid())
+  kind              String    // PROGRAM | EVENT | TASK | PROJECT
+  resourceId        String
+  personId          String
+  action            String    @default("VIEW") // VIEW | MANAGE
+  grantedByPersonId String
+  reason            String?
+  status            String    @default("ACTIVE") // ACTIVE | REVOKED
+  startDate         DateTime  @default(now())
+  endDate           DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([kind, resourceId, status])
+  @@index([personId, status])
 }
 
 model WorkTask {
@@ -295,6 +390,11 @@ model ChurchProject {
   startsOn          DateTime?
   endsOn            DateTime?
   stewardshipJson   String?
+  stewardshipVersion Int      @default(1)
+  /// JSON array of scope approval records
+  approvalsJson     String?
+  collaboratorSystemIds String? // JSON array
+  collaboratorPersonIds String? // JSON array
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
