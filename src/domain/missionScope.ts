@@ -51,7 +51,9 @@ export function isChurchMissionAdmin(
     return (
       p.grantsAllSystems === true ||
       p.systemRole === 'CHURCH_LEADER' ||
+      p.systemRole === 'PASTOR' ||
       p.systemRole === 'ASSISTANT_PASTOR' ||
+      p.systemRole === 'CATECHIST' ||
       p.systemRole === 'CHURCH_SECRETARY'
     );
   });
