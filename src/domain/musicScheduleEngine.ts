@@ -637,12 +637,14 @@ function pickIgaburoPair(
 export function validateSchedule(
   services: MusicServiceSlot[],
   assignments: MusicAssignment[],
+  mode: 'strict' | 'manual' = 'strict',
 ): { ok: boolean; warnings: string[]; reason?: string } {
   const warnings: string[] = [];
   const byService = groupBy(assignments, (a) => a.serviceId);
   const serviceById = new Map(services.map((s) => [s.id, s]));
+  const soft = mode === 'manual';
 
-  // Max 3 choirs on main; Hope+primaries+secondary
+  // Max 3 choirs on main
   for (const s of services) {
     const units = byService[s.id] ?? [];
     if (s.kind === 'SS1' || s.kind === 'SS2') {
@@ -656,36 +658,43 @@ export function validateSchedule(
     }
     if (s.kind === 'TUESDAY') {
       const choirs = units.filter((u) => u.unitId !== 'mu-worship');
-      if (units.every((u) => u.unitId !== 'mu-worship')) {
-        return { ok: false, warnings, reason: 'Tuesday missing Worship team' };
-      }
-      if (choirs.length !== 1 || !PRIMARY_UNIT_IDS.includes(choirs[0].unitId)) {
-        return {
-          ok: false,
-          warnings,
-          reason: 'Tuesday must have Worship + exactly 1 primary',
-        };
+      const hasWorship = units.some((u) => u.unitId === 'mu-worship');
+      if (
+        !hasWorship ||
+        choirs.length !== 1 ||
+        !PRIMARY_UNIT_IDS.includes(choirs[0]!.unitId as (typeof PRIMARY_UNIT_IDS)[number])
+      ) {
+        const msg = 'Tuesday should have Worship + exactly 1 primary';
+        if (soft) warnings.push(`${s.date}: ${msg}`);
+        else
+          return {
+            ok: false,
+            warnings,
+            reason: hasWorship ? msg : 'Tuesday missing Worship team',
+          };
       }
     }
     if (s.kind === 'FRIDAY') {
-      if (units.length !== 1 || !PRIMARY_UNIT_IDS.includes(units[0].unitId)) {
-        return {
-          ok: false,
-          warnings,
-          reason: 'Friday must have exactly 1 primary',
-        };
+      if (
+        units.length !== 1 ||
+        !PRIMARY_UNIT_IDS.includes(units[0]!.unitId as (typeof PRIMARY_UNIT_IDS)[number])
+      ) {
+        const msg = 'Friday should have exactly 1 primary';
+        if (soft) warnings.push(`${s.date}: ${msg}`);
+        else return { ok: false, warnings, reason: msg };
       }
     }
     if (s.kind === 'IGABURO') {
       if (
         units.length !== 2 ||
-        units.some((u) => !PRIMARY_UNIT_IDS.includes(u.unitId))
+        units.some(
+          (u) =>
+            !PRIMARY_UNIT_IDS.includes(u.unitId as (typeof PRIMARY_UNIT_IDS)[number]),
+        )
       ) {
-        return {
-          ok: false,
-          warnings,
-          reason: 'Igaburo must have exactly 2 primaries',
-        };
+        const msg = 'Igaburo should have exactly 2 primaries';
+        if (soft) warnings.push(`${s.date}: ${msg}`);
+        else return { ok: false, warnings, reason: msg };
       }
     }
   }
@@ -724,7 +733,7 @@ export function validateSchedule(
     }
   }
 
-  // Beulah / Yerusalemu once per month period, not same Sunday
+  // Beulah / Yerusalemu — soft count in manual; hard same-Sunday
   const periods = unique(services.map((s) => s.periodKey));
   for (const periodKey of periods) {
     const monthServices = new Set(
@@ -736,11 +745,9 @@ export function validateSchedule(
         .map((a) => serviceById.get(a.serviceId)?.date)
         .filter(Boolean) as string[];
       if (dates.length !== 1) {
-        return {
-          ok: false,
-          warnings,
-          reason: `${sec} must appear once in ${periodKey} (got ${dates.length})`,
-        };
+        const msg = `${sec} should appear once in ${periodKey} (got ${dates.length})`;
+        if (soft) warnings.push(msg);
+        else return { ok: false, warnings, reason: msg };
       }
     }
     const bDate = assignments
