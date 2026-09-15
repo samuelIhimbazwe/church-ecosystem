@@ -8,6 +8,10 @@ import {
 } from '../../services/churchFinanceService';
 import { financeService } from '../../services';
 import { MinistryHomeCard } from './MinistryShell';
+import {
+  SelectField,
+  TextField,
+} from '../../components/ui/Field';
 
 function fmt(n: number) {
   return financeService.formatAmount(n);
@@ -32,7 +36,7 @@ export function ChurchCollectionsPage() {
     return (
       <div className="panel">
         <p className="error">General Fund access required.</p>
-        <Link to="/systems/finance">Back</Link>
+        <Link to="/finance">Back</Link>
       </div>
     );
   }
@@ -80,62 +84,56 @@ export function ChurchCollectionsPage() {
           <h3>Post service totals</h3>
           <form className="stack" onSubmit={onSubmit}>
             <div className="grid-2">
-              <div className="field">
-                <label>Service date</label>
-                <input
-                  type="date"
-                  value={serviceDate}
-                  onChange={(e) => setServiceDate(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Service</label>
-                <select
-                  value={serviceLabel}
-                  onChange={(e) => setServiceLabel(e.target.value)}
-                >
-                  <option>Sunday 1st service</option>
-                  <option>Sunday 2nd service</option>
-                  <option>Tuesday prayer</option>
-                  <option>Friday overnight</option>
-                  <option>Special / crusade</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Tithes (RWF)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={tithe}
-                  onChange={(e) => setTithe(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Offerings (RWF)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={offering}
-                  onChange={(e) => setOffering(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Givings (RWF)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={giving}
-                  onChange={(e) => setGiving(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Notes</label>
-                <input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-              </div>
+              <TextField
+                label="Service date"
+                name="svc-date"
+                type="date"
+                value={serviceDate}
+                onChange={(e) => setServiceDate(e.target.value)}
+                required
+              />
+              <SelectField
+                label="Service"
+                name="svc-label"
+                value={serviceLabel}
+                onChange={(e) => setServiceLabel(e.target.value)}
+              >
+                <option>Sunday 1st service</option>
+                <option>Sunday 2nd service</option>
+                <option>Tuesday prayer</option>
+                <option>Friday overnight</option>
+                <option>Special / crusade</option>
+              </SelectField>
+              <TextField
+                label="Tithes (RWF)"
+                name="svc-tithe"
+                type="number"
+                min={0}
+                value={tithe}
+                onChange={(e) => setTithe(e.target.value)}
+              />
+              <TextField
+                label="Offerings (RWF)"
+                name="svc-offering"
+                type="number"
+                min={0}
+                value={offering}
+                onChange={(e) => setOffering(e.target.value)}
+              />
+              <TextField
+                label="Givings (RWF)"
+                name="svc-giving"
+                type="number"
+                min={0}
+                value={giving}
+                onChange={(e) => setGiving(e.target.value)}
+              />
+              <TextField
+                label="Notes"
+                name="svc-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
             <button type="submit" className="btn">
               Post to General Fund
@@ -233,7 +231,7 @@ export function ChurchCollectionsPage() {
 
       <p className="muted">
         {collections.length} collection records ·{' '}
-        <Link to="/systems/finance/funds/fund-general">Open General Fund ledger</Link>
+        <Link to="/finance/funds/fund-general">Open General Fund ledger</Link>
       </p>
     </div>
   );
@@ -715,7 +713,7 @@ export function ChurchReportsPage() {
           </span>
           <span className="badge">Equity {fmt(sheet.totals.EQUITY)}</span>
         </div>
-        <Link to="/systems/finance/balance-sheet">Open balance sheet →</Link>
+        <Link to="/finance/balance-sheet">Open balance sheet →</Link>
       </div>
     </div>
   );
