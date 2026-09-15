@@ -7,6 +7,11 @@ import type {
   PersonTimelineEvent,
 } from '../domain/types';
 import { peopleService, participationService } from '../services';
+import {
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../components/ui/Field';
 
 type Tab = 'identity' | 'baptism' | 'marriage' | 'family' | 'timeline' | 'docs';
 
@@ -277,14 +282,16 @@ export function PersonFormPage() {
             {id ? 'View profile' : 'Cancel'}
           </Link>
         </div>
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="tabs" role="tablist" aria-label="Person sections" style={{ marginTop: '0.75rem' }}>
           {tabs
             .filter((t) => !t.needsFull || (isEdit && canViewFullRecord))
             .map((t) => (
               <button
                 key={t.id}
                 type="button"
-                className={`btn ${tab === t.id ? '' : 'ghost'}`}
+                role="tab"
+                className="tab"
+                aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
               >
                 {t.label}
@@ -300,117 +307,106 @@ export function PersonFormPage() {
 
       {tab === 'identity' && (
         <form className="panel stack" onSubmit={onSaveIdentity}>
-          <div className="field">
-            <label htmlFor="fullName">Full name</label>
-            <input
-              id="fullName"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="preferredName">Preferred name</label>
-            <input
-              id="preferredName"
-              value={preferredName}
-              onChange={(e) => setPreferredName(e.target.value)}
-            />
-          </div>
+          <TextField
+            label="Full name"
+            name="fullName"
+            id="fullName"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+          />
+          <TextField
+            label="Preferred name"
+            name="preferredName"
+            id="preferredName"
+            value={preferredName}
+            onChange={(e) => setPreferredName(e.target.value)}
+          />
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="phone">Phone</label>
-              <input
-                id="phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="grid-2">
-            <div className="field">
-              <label htmlFor="dob">Date of birth</label>
-              <input
-                id="dob"
-                type="date"
-                value={dateOfBirth}
-                onChange={(e) => setDateOfBirth(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="gender">Gender</label>
-              <select
-                id="gender"
-                value={gender}
-                onChange={(e) =>
-                  setGender(e.target.value as Person['gender'] | '')
-                }
-              >
-                <option value="">—</option>
-                <option value="MALE">Male</option>
-                <option value="FEMALE">Female</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="address">Address</label>
-            <input
-              id="address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
+            <TextField
+              label="Phone"
+              name="phone"
+              id="phone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+            <TextField
+              label="Email"
+              name="email"
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="nid">National ID</label>
-              <input
-                id="nid"
-                value={nationalId}
-                onChange={(e) => setNationalId(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="joined">Joined church</label>
-              <input
-                id="joined"
-                type="date"
-                value={joinedChurchOn}
-                onChange={(e) => setJoinedChurchOn(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="status">Status</label>
-            <select
-              id="status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as Person['status'])}
+            <TextField
+              label="Date of birth"
+              name="dob"
+              id="dob"
+              type="date"
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+            />
+            <SelectField
+              label="Gender"
+              name="gender"
+              id="gender"
+              value={gender}
+              onChange={(e) =>
+                setGender(e.target.value as Person['gender'] | '')
+              }
             >
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-              <option value="VISITOR">Visitor</option>
-            </select>
+              <option value="">—</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+            </SelectField>
           </div>
+          <TextField
+            label="Address"
+            name="address"
+            id="address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+          <div className="grid-2">
+            <TextField
+              label="National ID"
+              name="nid"
+              id="nid"
+              value={nationalId}
+              onChange={(e) => setNationalId(e.target.value)}
+            />
+            <TextField
+              label="Joined church"
+              name="joined"
+              id="joined"
+              type="date"
+              value={joinedChurchOn}
+              onChange={(e) => setJoinedChurchOn(e.target.value)}
+            />
+          </div>
+          <SelectField
+            label="Status"
+            name="status"
+            id="status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as Person['status'])}
+          >
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+            <option value="VISITOR">Visitor</option>
+          </SelectField>
           {canViewFullRecord && (
-            <div className="field">
-              <label htmlFor="notes">Pastoral notes</label>
-              <textarea
-                id="notes"
-                value={pastoralNotes}
-                onChange={(e) => setPastoralNotes(e.target.value)}
-                rows={3}
-              />
-            </div>
+            <TextAreaField
+              label="Pastoral notes"
+              name="notes"
+              id="notes"
+              value={pastoralNotes}
+              onChange={(e) => setPastoralNotes(e.target.value)}
+              rows={3}
+            />
           )}
           <button type="submit" className="btn">
             Save identity
@@ -424,68 +420,62 @@ export function PersonFormPage() {
             One baptism record per person (upsert)
           </p>
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="bapOn">Baptized on</label>
-              <input
-                id="bapOn"
-                type="date"
-                value={bapOn}
-                onChange={(e) => setBapOn(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="bapMode">Mode</label>
-              <select
-                id="bapMode"
-                value={bapMode}
-                onChange={(e) =>
-                  setBapMode(
-                    e.target.value as 'IMMERSION' | 'POURING' | 'OTHER',
-                  )
-                }
-              >
-                <option value="IMMERSION">Immersion</option>
-                <option value="POURING">Pouring</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="bapPlace">Place</label>
-            <input
-              id="bapPlace"
-              value={bapPlace}
-              onChange={(e) => setBapPlace(e.target.value)}
+            <TextField
+              label="Baptized on"
+              name="bapOn"
+              id="bapOn"
+              type="date"
+              value={bapOn}
+              onChange={(e) => setBapOn(e.target.value)}
+              required
             />
+            <SelectField
+              label="Mode"
+              name="bapMode"
+              id="bapMode"
+              value={bapMode}
+              onChange={(e) =>
+                setBapMode(
+                  e.target.value as 'IMMERSION' | 'POURING' | 'OTHER',
+                )
+              }
+            >
+              <option value="IMMERSION">Immersion</option>
+              <option value="POURING">Pouring</option>
+              <option value="OTHER">Other</option>
+            </SelectField>
           </div>
+          <TextField
+            label="Place"
+            name="bapPlace"
+            id="bapPlace"
+            value={bapPlace}
+            onChange={(e) => setBapPlace(e.target.value)}
+          />
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="bapMinister">Minister</label>
-              <input
-                id="bapMinister"
-                value={bapMinister}
-                onChange={(e) => setBapMinister(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="bapCert">Certificate ref</label>
-              <input
-                id="bapCert"
-                value={bapCert}
-                onChange={(e) => setBapCert(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="bapNotes">Notes</label>
-            <textarea
-              id="bapNotes"
-              value={bapNotes}
-              onChange={(e) => setBapNotes(e.target.value)}
-              rows={2}
+            <TextField
+              label="Minister"
+              name="bapMinister"
+              id="bapMinister"
+              value={bapMinister}
+              onChange={(e) => setBapMinister(e.target.value)}
+            />
+            <TextField
+              label="Certificate ref"
+              name="bapCert"
+              id="bapCert"
+              value={bapCert}
+              onChange={(e) => setBapCert(e.target.value)}
             />
           </div>
+          <TextAreaField
+            label="Notes"
+            name="bapNotes"
+            id="bapNotes"
+            value={bapNotes}
+            onChange={(e) => setBapNotes(e.target.value)}
+            rows={2}
+          />
           <button type="submit" className="btn">
             Save baptism
           </button>
@@ -494,74 +484,68 @@ export function PersonFormPage() {
 
       {tab === 'marriage' && id && canViewFullRecord && (
         <form className="panel stack" onSubmit={onSaveMarriage}>
-          <div className="field">
-            <label htmlFor="marSpouse">Spouse name</label>
-            <input
-              id="marSpouse"
-              value={marSpouse}
-              onChange={(e) => setMarSpouse(e.target.value)}
+          <TextField
+            label="Spouse name"
+            name="marSpouse"
+            id="marSpouse"
+            value={marSpouse}
+            onChange={(e) => setMarSpouse(e.target.value)}
+          />
+          <div className="grid-2">
+            <TextField
+              label="Married on"
+              name="marOn"
+              id="marOn"
+              type="date"
+              value={marOn}
+              onChange={(e) => setMarOn(e.target.value)}
+              required
             />
+            <SelectField
+              label="Status"
+              name="marStatus"
+              id="marStatus"
+              value={marStatus}
+              onChange={(e) =>
+                setMarStatus(
+                  e.target.value as
+                    | 'MARRIED'
+                    | 'WIDOWED'
+                    | 'DIVORCED'
+                    | 'SEPARATED',
+                )
+              }
+            >
+              <option value="MARRIED">Married</option>
+              <option value="WIDOWED">Widowed</option>
+              <option value="DIVORCED">Divorced</option>
+              <option value="SEPARATED">Separated</option>
+            </SelectField>
           </div>
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="marOn">Married on</label>
-              <input
-                id="marOn"
-                type="date"
-                value={marOn}
-                onChange={(e) => setMarOn(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="marStatus">Status</label>
-              <select
-                id="marStatus"
-                value={marStatus}
-                onChange={(e) =>
-                  setMarStatus(
-                    e.target.value as
-                      | 'MARRIED'
-                      | 'WIDOWED'
-                      | 'DIVORCED'
-                      | 'SEPARATED',
-                  )
-                }
-              >
-                <option value="MARRIED">Married</option>
-                <option value="WIDOWED">Widowed</option>
-                <option value="DIVORCED">Divorced</option>
-                <option value="SEPARATED">Separated</option>
-              </select>
-            </div>
-          </div>
-          <div className="grid-2">
-            <div className="field">
-              <label htmlFor="marPlace">Place</label>
-              <input
-                id="marPlace"
-                value={marPlace}
-                onChange={(e) => setMarPlace(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="marCert">Certificate ref</label>
-              <input
-                id="marCert"
-                value={marCert}
-                onChange={(e) => setMarCert(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="marNotes">Notes</label>
-            <textarea
-              id="marNotes"
-              value={marNotes}
-              onChange={(e) => setMarNotes(e.target.value)}
-              rows={2}
+            <TextField
+              label="Place"
+              name="marPlace"
+              id="marPlace"
+              value={marPlace}
+              onChange={(e) => setMarPlace(e.target.value)}
+            />
+            <TextField
+              label="Certificate ref"
+              name="marCert"
+              id="marCert"
+              value={marCert}
+              onChange={(e) => setMarCert(e.target.value)}
             />
           </div>
+          <TextAreaField
+            label="Notes"
+            name="marNotes"
+            id="marNotes"
+            value={marNotes}
+            onChange={(e) => setMarNotes(e.target.value)}
+            rows={2}
+          />
           <button type="submit" className="btn">
             Save marriage
           </button>
@@ -594,7 +578,7 @@ export function PersonFormPage() {
                       <td>
                         <button
                           type="button"
-                          className="btn ghost"
+                          className="btn ghost sm"
                           onClick={() => {
                             if (!gate()) return;
                             peopleService.removeFamilyLink(l.id);
@@ -613,47 +597,44 @@ export function PersonFormPage() {
           </div>
           <form className="panel stack" onSubmit={onAddFamily}>
             <h3 style={{ margin: 0 }}>Add link</h3>
-            <div className="field">
-              <label htmlFor="famRel">Related person</label>
-              <select
-                id="famRel"
-                value={famRelated}
-                onChange={(e) => setFamRelated(e.target.value)}
-                required
-              >
-                <option value="">— select —</option>
-                {peopleOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.fullName}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="famRelation">Relation</label>
-              <select
-                id="famRelation"
-                value={famRelation}
-                onChange={(e) =>
-                  setFamRelation(e.target.value as FamilyRelation)
-                }
-              >
-                <option value="SPOUSE">Spouse</option>
-                <option value="CHILD">Child</option>
-                <option value="PARENT">Parent</option>
-                <option value="SIBLING">Sibling</option>
-                <option value="GUARDIAN">Guardian</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="famNotes">Notes</label>
-              <input
-                id="famNotes"
-                value={famNotes}
-                onChange={(e) => setFamNotes(e.target.value)}
-              />
-            </div>
+            <SelectField
+              label="Related person"
+              name="famRel"
+              id="famRel"
+              value={famRelated}
+              onChange={(e) => setFamRelated(e.target.value)}
+              required
+            >
+              <option value="">— select —</option>
+              {peopleOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Relation"
+              name="famRelation"
+              id="famRelation"
+              value={famRelation}
+              onChange={(e) =>
+                setFamRelation(e.target.value as FamilyRelation)
+              }
+            >
+              <option value="SPOUSE">Spouse</option>
+              <option value="CHILD">Child</option>
+              <option value="PARENT">Parent</option>
+              <option value="SIBLING">Sibling</option>
+              <option value="GUARDIAN">Guardian</option>
+              <option value="OTHER">Other</option>
+            </SelectField>
+            <TextField
+              label="Notes"
+              name="famNotes"
+              id="famNotes"
+              value={famNotes}
+              onChange={(e) => setFamNotes(e.target.value)}
+            />
             <button type="submit" className="btn">
               Add family link
             </button>
@@ -679,53 +660,49 @@ export function PersonFormPage() {
           <form className="panel stack" onSubmit={onAddTimeline}>
             <h3 style={{ margin: 0 }}>Add event</h3>
             <div className="grid-2">
-              <div className="field">
-                <label htmlFor="tlAt">Date</label>
-                <input
-                  id="tlAt"
-                  type="date"
-                  value={tlAt}
-                  onChange={(e) => setTlAt(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="tlKind">Kind</label>
-                <select
-                  id="tlKind"
-                  value={tlKind}
-                  onChange={(e) =>
-                    setTlKind(e.target.value as PersonTimelineEvent['kind'])
-                  }
-                >
-                  <option value="NOTE">Note</option>
-                  <option value="MEMBERSHIP">Membership</option>
-                  <option value="BAPTISM">Baptism</option>
-                  <option value="MARRIAGE">Marriage</option>
-                  <option value="MINISTRY">Ministry</option>
-                  <option value="DISCIPLINE">Discipline</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="tlTitle">Title</label>
-              <input
-                id="tlTitle"
-                value={tlTitle}
-                onChange={(e) => setTlTitle(e.target.value)}
+              <TextField
+                label="Date"
+                name="tlAt"
+                id="tlAt"
+                type="date"
+                value={tlAt}
+                onChange={(e) => setTlAt(e.target.value)}
                 required
               />
+              <SelectField
+                label="Kind"
+                name="tlKind"
+                id="tlKind"
+                value={tlKind}
+                onChange={(e) =>
+                  setTlKind(e.target.value as PersonTimelineEvent['kind'])
+                }
+              >
+                <option value="NOTE">Note</option>
+                <option value="MEMBERSHIP">Membership</option>
+                <option value="BAPTISM">Baptism</option>
+                <option value="MARRIAGE">Marriage</option>
+                <option value="MINISTRY">Ministry</option>
+                <option value="DISCIPLINE">Discipline</option>
+                <option value="OTHER">Other</option>
+              </SelectField>
             </div>
-            <div className="field">
-              <label htmlFor="tlDetail">Detail</label>
-              <textarea
-                id="tlDetail"
-                value={tlDetail}
-                onChange={(e) => setTlDetail(e.target.value)}
-                rows={2}
-              />
-            </div>
+            <TextField
+              label="Title"
+              name="tlTitle"
+              id="tlTitle"
+              value={tlTitle}
+              onChange={(e) => setTlTitle(e.target.value)}
+              required
+            />
+            <TextAreaField
+              label="Detail"
+              name="tlDetail"
+              id="tlDetail"
+              value={tlDetail}
+              onChange={(e) => setTlDetail(e.target.value)}
+              rows={2}
+            />
             <button type="submit" className="btn">
               Add timeline event
             </button>
@@ -761,55 +738,51 @@ export function PersonFormPage() {
           </div>
           <form className="panel stack" onSubmit={onAddDoc}>
             <h3 style={{ margin: 0 }}>Add document meta</h3>
-            <div className="field">
-              <label htmlFor="docLabel">Label</label>
-              <input
-                id="docLabel"
-                value={docLabel}
-                onChange={(e) => setDocLabel(e.target.value)}
-                required
-              />
-            </div>
+            <TextField
+              label="Label"
+              name="docLabel"
+              id="docLabel"
+              value={docLabel}
+              onChange={(e) => setDocLabel(e.target.value)}
+              required
+            />
             <div className="grid-2">
-              <div className="field">
-                <label htmlFor="docKind">Kind</label>
-                <select
-                  id="docKind"
-                  value={docKind}
-                  onChange={(e) =>
-                    setDocKind(
-                      e.target.value as
-                        | 'CERTIFICATE'
-                        | 'ID'
-                        | 'LETTER'
-                        | 'OTHER',
-                    )
-                  }
-                >
-                  <option value="CERTIFICATE">Certificate</option>
-                  <option value="ID">ID</option>
-                  <option value="LETTER">Letter</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="docIssued">Issued on</label>
-                <input
-                  id="docIssued"
-                  type="date"
-                  value={docIssued}
-                  onChange={(e) => setDocIssued(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="docNote">Note</label>
-              <input
-                id="docNote"
-                value={docNote}
-                onChange={(e) => setDocNote(e.target.value)}
+              <SelectField
+                label="Kind"
+                name="docKind"
+                id="docKind"
+                value={docKind}
+                onChange={(e) =>
+                  setDocKind(
+                    e.target.value as
+                      | 'CERTIFICATE'
+                      | 'ID'
+                      | 'LETTER'
+                      | 'OTHER',
+                  )
+                }
+              >
+                <option value="CERTIFICATE">Certificate</option>
+                <option value="ID">ID</option>
+                <option value="LETTER">Letter</option>
+                <option value="OTHER">Other</option>
+              </SelectField>
+              <TextField
+                label="Issued on"
+                name="docIssued"
+                id="docIssued"
+                type="date"
+                value={docIssued}
+                onChange={(e) => setDocIssued(e.target.value)}
               />
             </div>
+            <TextField
+              label="Note"
+              name="docNote"
+              id="docNote"
+              value={docNote}
+              onChange={(e) => setDocNote(e.target.value)}
+            />
             <button type="submit" className="btn">
               Add document
             </button>
