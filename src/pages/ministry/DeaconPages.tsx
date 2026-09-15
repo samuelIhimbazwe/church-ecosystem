@@ -29,7 +29,7 @@ export function DeaconHomePage() {
             </span>
           )}
           <span className="badge">
-            Fund {stats.fundBalance.toLocaleString()} RWF
+            {stats.pendingExpenses} spend waiting approval
           </span>
           <span className="badge">Signed in as {personName}</span>
         </div>
