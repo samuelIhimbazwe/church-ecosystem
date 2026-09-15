@@ -693,7 +693,7 @@ export const protocolService = {
       'CONTRIBUTION_VERIFIED',
       'Contribution verified',
       `${c.amount.toLocaleString()} RWF posted to Protocol fund`,
-      '/systems/finance/funds/fund-protocol',
+      '/systems/protocol/finance',
     );
     return { ok: true };
   },
