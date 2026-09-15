@@ -143,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setActiveChoir = useCallback(
     (orgUnitId: string) => {
+      const current = authService.getSession()?.activeChoirOrgUnitId;
+      if (current === orgUnitId) return;
       authService.setActiveChoirOrgUnitId(orgUnitId);
       refreshSession();
     },
@@ -276,7 +278,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       grants,
       grantsFromApi,
       availableSystems: account
-        ? systemsService.listActive().filter((s) => canEnter(s.id))
+        ? systemsService
+            .listActive()
+            .filter((s) => s.id !== 'sys-finance' && canEnter(s.id))
         : [],
       memberships: account
         ? participationService.activeMemberships(account.personId)
