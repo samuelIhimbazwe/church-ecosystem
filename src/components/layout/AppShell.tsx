@@ -1,11 +1,22 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useMemo } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import {
+  isCatechist,
+  isChurchLeader,
+  isOrdainedPastor,
+} from '../../domain/churchLeadership';
+import { canSeeSystemAdminNav } from '../../domain/systemAdmin';
 import { CommandPalette } from '../CommandPalette';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
+import { ThemeToggle } from '../ui/ThemeToggle';
 import { useAttention } from '../../hooks/useAttention';
 import { peekExitToMainChurch, consumeExitToMainChurch } from '../../navigation/systemScope';
-import { authService, churchFinanceService } from '../../services';
+import {
+  authService,
+  churchFinanceService,
+} from '../../services';
+import { canViewBoard } from '../../services/boardService';
 
 function weekOfLabel(d = new Date()) {
   const start = new Date(d);
@@ -21,53 +32,99 @@ function weekOfLabel(d = new Date()) {
 
 const NAV_GROUPS: Array<{
   label: string;
-  items: Array<{ to: string; label: string; end?: boolean; secondary?: boolean }>;
+  items: Array<{
+    to: string;
+    label: string;
+    icon: IconName;
+    end?: boolean;
+    secondary?: boolean;
+  }>;
 }> = [
   {
     label: 'Home',
     items: [
-      { to: '/', label: 'Home', end: true },
-      { to: '/inbox', label: 'Inbox' },
-      { to: '/board', label: 'Board', secondary: true },
-      { to: '/pastoral', label: 'Pastoral desk', secondary: true },
-      { to: '/system-admin', label: 'System admin', secondary: true },
+      { to: '/', label: 'Home', icon: 'home', end: true },
+      { to: '/inbox', label: 'Inbox', icon: 'inbox' },
+      { to: '/board', label: 'Board', icon: 'board', secondary: true },
+      { to: '/pastoral', label: 'Pastoral desk', icon: 'pastoral', secondary: true },
+      {
+        to: '/system-admin',
+        label: 'System admin',
+        icon: 'settings',
+        secondary: true,
+      },
     ],
   },
   {
     label: 'People & org',
     items: [
-      { to: '/people', label: 'People' },
-      { to: '/organization', label: 'Organisation', secondary: true },
-      { to: '/participation', label: 'Participation', secondary: true },
+      { to: '/people', label: 'People', icon: 'users' },
+      {
+        to: '/organization',
+        label: 'Organisation',
+        icon: 'building',
+        secondary: true,
+      },
+      {
+        to: '/participation',
+        label: 'Participation',
+        icon: 'hand',
+        secondary: true,
+      },
     ],
   },
   {
     label: 'Work',
     items: [
-      { to: '/mission', label: 'Mission' },
-      { to: '/programs', label: 'Programs', secondary: true },
-      { to: '/events', label: 'Events', secondary: true },
-      { to: '/tasks', label: 'Tasks', secondary: true },
-      { to: '/projects', label: 'Projects', secondary: true },
-      { to: '/calendar', label: 'Calendar', secondary: true },
-      { to: '/reports/leadership', label: 'Reports', secondary: true },
+      { to: '/mission', label: 'Mission', icon: 'pulse' },
+      { to: '/programs', label: 'Programs', icon: 'program', secondary: true },
+      { to: '/events', label: 'Events', icon: 'event', secondary: true },
+      { to: '/tasks', label: 'Tasks', icon: 'task', secondary: true },
+      { to: '/projects', label: 'Projects', icon: 'folder', secondary: true },
+      { to: '/calendar', label: 'Calendar', icon: 'calendar', secondary: true },
+      {
+        to: '/reports/leadership',
+        label: 'Reports',
+        icon: 'chart',
+        secondary: true,
+      },
     ],
   },
   {
     label: 'Treasury',
     items: [
-      { to: '/finance', label: 'Overview', end: true },
-      { to: '/finance/collections', label: 'Collections', secondary: true },
-      { to: '/finance/budgets', label: 'Budgets', secondary: true },
-      { to: '/finance/balance-sheet', label: 'Balance sheet', secondary: true },
-      { to: '/finance/reports', label: 'Reports', secondary: true },
+      { to: '/finance', label: 'Overview', icon: 'wallet', end: true },
+      {
+        to: '/finance/collections',
+        label: 'Collections',
+        icon: 'hand',
+        secondary: true,
+      },
+      {
+        to: '/finance/budgets',
+        label: 'Budgets',
+        icon: 'chart',
+        secondary: true,
+      },
+      {
+        to: '/finance/balance-sheet',
+        label: 'Balance sheet',
+        icon: 'layers',
+        secondary: true,
+      },
+      {
+        to: '/finance/reports',
+        label: 'Reports',
+        icon: 'chart',
+        secondary: true,
+      },
     ],
   },
   {
     label: 'Admin',
     items: [
-      { to: '/access', label: 'Access' },
-      { to: '/systems', label: 'Systems', secondary: true },
+      { to: '/access', label: 'Access', icon: 'lock' },
+      { to: '/systems', label: 'Systems', icon: 'systems', secondary: true },
     ],
   },
 ];
@@ -89,6 +146,8 @@ export function AppShell({
     account,
     can,
     session,
+    positions,
+    roles,
   } = useAuth();
   const location = useLocation();
   const { unreadCount } = useAttention();
@@ -118,6 +177,59 @@ export function AppShell({
   const canTreasury = Boolean(
     account && churchFinanceService.canViewGeneral(account.personId),
   );
+  const canBoard =
+    !!account &&
+    (can('BOARD', 'VIEW', 'sys-main') ||
+      canViewBoard(account.personId, positions, roles));
+  const canPastoral =
+    isChurchLeader(roles) || isCatechist(roles) || isOrdainedPastor(roles);
+  const canSystemAdmin = Boolean(
+    account && canSeeSystemAdminNav(account.personId, positions, roles),
+  );
+  const canOrg = can('ORG_UNIT', 'VIEW');
+  const canProgram = can('PROGRAM', 'VIEW');
+  const canEvent = can('EVENT', 'VIEW');
+  const canTask = can('TASK', 'VIEW');
+  const canProject = can('PROJECT', 'VIEW');
+  const canMission = canProgram || canEvent || canTask || canProject;
+  const canCalendar = canProgram || canEvent;
+
+  /** Never list a module the signed-in person cannot open. */
+  function navItemAllowed(to: string): boolean {
+    switch (to) {
+      case '/':
+      case '/inbox':
+        return true;
+      case '/board':
+        return canBoard;
+      case '/pastoral':
+        return canPastoral;
+      case '/system-admin':
+        return canSystemAdmin;
+      case '/people':
+        return true; // remapped to Profile when directory is closed
+      case '/organization':
+        return canOrg;
+      case '/participation':
+        return true; // own participation desk
+      case '/mission':
+        return canMission;
+      case '/programs':
+        return canProgram;
+      case '/events':
+        return canEvent;
+      case '/tasks':
+        return canTask;
+      case '/projects':
+        return canProject;
+      case '/calendar':
+        return canCalendar;
+      case '/reports/leadership':
+        return canProgram;
+      default:
+        return true;
+    }
+  }
 
   const navGroups = NAV_GROUPS.map((group) => {
     if (group.label === 'Admin') {
@@ -128,17 +240,21 @@ export function AppShell({
       if (!canTreasury) return { ...group, items: [] };
       return group;
     }
-    if (group.label !== 'People & org') return group;
-    return {
-      ...group,
-      items: group.items.map((item) =>
-        item.to === '/people'
-          ? canViewPeople
-            ? item
-            : { to: profilePath, label: 'Profile' }
+
+    const items = group.items
+      .filter((item) => navItemAllowed(item.to))
+      .map((item) =>
+        item.to === '/people' && !canViewPeople
+          ? {
+              ...item,
+              to: profilePath,
+              label: 'Profile',
+              icon: 'user' as IconName,
+            }
           : item,
-      ),
-    };
+      );
+
+    return { ...group, items };
   }).filter((group) => group.items.length > 0);
 
   const weekLabel = useMemo(() => weekOfLabel(), []);
@@ -181,7 +297,10 @@ export function AppShell({
                       .join(' ') || undefined
                   }
                 >
-                  {item.label}
+                  <span className="nav-link-main">
+                    <Icon name={item.icon} size={15} className="nav-icon" />
+                    <span className="nav-label">{item.label}</span>
+                  </span>
                   {item.to === '/inbox' && unreadCount > 0 ? (
                     <span className="nav-badge" aria-label={`${unreadCount} unread`}>
                       {unreadCount}
@@ -193,17 +312,13 @@ export function AppShell({
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div>{personName}</div>
-          <div className="muted">
+          <div className="sidebar-foot-name">{personName}</div>
+          <div className="sidebar-foot-role">
             {roleLabels.join(' · ') || 'Member'}
           </div>
-          <p className="sidebar-quote muted">
-            Faith · Knowledge · Service
-          </p>
           <button
             type="button"
-            className="btn ghost sm"
-            style={{ marginTop: '0.75rem' }}
+            className="btn sm btn-signout"
             onClick={logout}
           >
             Sign out
@@ -218,6 +333,7 @@ export function AppShell({
             <p>{subtitle}</p>
           </div>
           <div className="topbar-actions">
+            <ThemeToggle />
             <button
               type="button"
               className="topbar-search"
