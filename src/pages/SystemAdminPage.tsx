@@ -2,15 +2,22 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { StatusPill } from '../components/ui/StatusPill';
-import { systemAdminSystemIds } from '../domain/systemAdmin';
+import {
+  canSeeSystemAdminNav,
+  systemAdminSystemIds,
+} from '../domain/systemAdmin';
 import { systemsService } from '../services';
 
 /**
  * Appointed System Admin home — config posture for systems you administer.
  * Never a back door to finance ledgers or pastoral dumps.
+ * Visible to Church Leader, ministry/org presidents, and appointed System Admins.
  */
 export function SystemAdminPage() {
-  const { account, positions, can } = useAuth();
+  const { account, positions, roles, can } = useAuth();
+  const maySee = Boolean(
+    account && canSeeSystemAdminNav(account.personId, positions, roles),
+  );
   const adminIds = useMemo(
     () =>
       account ? systemAdminSystemIds(account.personId, positions) : [],
@@ -19,14 +26,30 @@ export function SystemAdminPage() {
 
   if (!account) return null;
 
+  if (!maySee) {
+    return (
+      <div className="panel">
+        <h1>System administration</h1>
+        <p className="muted">
+          Only Church Leader, ministry or organisation presidents, and
+          appointed System Admins can open this desk.
+        </p>
+        <Link to="/" className="btn secondary">
+          Home
+        </Link>
+      </div>
+    );
+  }
+
   if (adminIds.length === 0) {
     return (
       <div className="panel">
         <h1>System administration</h1>
         <p className="muted">
-          You are not appointed as System Admin on any peer system. Church
-          Leader or a ministry president can appoint a member for tool
-          configuration only — that does not grant ledgers or full ops data.
+          You are not personally appointed as System Admin on a peer system
+          yet. Presidents appoint a member for tool configuration only — that
+          does not grant ledgers or full ops data. Church Leader confirms
+          appointments.
         </p>
       </div>
     );
