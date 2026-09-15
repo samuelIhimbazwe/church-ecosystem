@@ -7,6 +7,9 @@ import {
   requireAuth,
   type AuthedRequest,
 } from '../middleware/http.js';
+import { toStoredVisibility } from '../mission/visibility.js';
+import { registerMissionExtendedRoutes } from '../mission/registerExtended.js';
+import { parseStewardship } from '../mission/stewardshipJson.js';
 
 export const missionRouter = Router();
 
@@ -72,7 +75,15 @@ missionRouter.get('/programs/:id', requireAuth, async (req: AuthedRequest, res) 
     res.status(403).json({ error: decision.reason });
     return;
   }
-  res.json({ program });
+  const steward = parseStewardship(program.stewardshipJson);
+  res.json({
+    program: {
+      ...program,
+      visibility: toStoredVisibility(program.visibility),
+      approvedAt: program.approvedAt?.toISOString() ?? null,
+      ...steward,
+    },
+  });
 });
 
 const programCreateSchema = z.object({
@@ -116,14 +127,19 @@ missionRouter.post('/programs', requireAuth, async (req: AuthedRequest, res) => 
       name: parsed.data.name,
       description: parsed.data.description ?? '',
       ownerSystemId: parsed.data.ownerSystemId,
-      visibility: parsed.data.visibility ?? 'MINISTRY',
+      visibility: toStoredVisibility(parsed.data.visibility),
       status: parsed.data.status ?? 'DRAFT',
       programType: parsed.data.programType,
       scheduleHint: parsed.data.scheduleHint,
       createdByPersonId: req.auth!.personId,
     },
   });
-  res.status(201).json({ program });
+  res.status(201).json({
+    program: {
+      ...program,
+      visibility: toStoredVisibility(program.visibility),
+    },
+  });
 });
 
 missionRouter.get('/events', requireAuth, async (req: AuthedRequest, res) => {
@@ -191,11 +207,25 @@ const eventCreateSchema = z.object({
   type: z.string().optional(),
   description: z.string().optional(),
   ownerSystemId: z.string().min(1),
-  visibility: z.enum(['GENERAL', 'MINISTRY', 'SELECTED']).optional(),
+  visibility: z
+    .enum([
+      'GENERAL',
+      'MINISTRY',
+      'SELECTED',
+      'CHURCH',
+      'MINISTRY_PRIVATE',
+      'SELECTIVE',
+    ])
+    .optional(),
   startsAt: z.string().min(1),
   endsAt: z.string().optional(),
   location: z.string().optional(),
   status: z.string().optional(),
+  capacity: z.number().int().positive().optional(),
+  programId: z.string().optional(),
+  projectId: z.string().optional(),
+  willSpend: z.boolean().optional(),
+  plannedCost: z.number().optional(),
 });
 
 missionRouter.post('/events', requireAuth, async (req: AuthedRequest, res) => {
@@ -203,6 +233,17 @@ missionRouter.post('/events', requireAuth, async (req: AuthedRequest, res) => {
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body', details: parsed.error.flatten() });
     return;
+  }
+  if (parsed.data.willSpend) {
+    const hasProject = !!parsed.data.projectId;
+    const hasPlan =
+      parsed.data.plannedCost != null && parsed.data.plannedCost > 0;
+    if (!hasProject && !hasPlan) {
+      res.status(400).json({
+        error: 'Spending events need a linked project or planned cost',
+      });
+      return;
+    }
   }
   const decision = await authorizePerson({
     personId: req.auth!.personId,
@@ -220,15 +261,25 @@ missionRouter.post('/events', requireAuth, async (req: AuthedRequest, res) => {
       type: parsed.data.type ?? 'OTHER',
       description: parsed.data.description,
       ownerSystemId: parsed.data.ownerSystemId,
-      visibility: parsed.data.visibility ?? 'MINISTRY',
+      visibility: toStoredVisibility(parsed.data.visibility),
       startsAt: new Date(parsed.data.startsAt),
       endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) : undefined,
       location: parsed.data.location,
       status: parsed.data.status ?? 'DRAFT',
+      capacity: parsed.data.capacity,
+      programId: parsed.data.programId,
+      projectId: parsed.data.projectId,
       createdByPersonId: req.auth!.personId,
     },
   });
-  res.status(201).json({ event });
+  res.status(201).json({
+    event: {
+      ...event,
+      visibility: toStoredVisibility(event.visibility),
+      collaboratorSystemIds: parseJsonArray(event.collaboratorSystemIds),
+      collaboratorPersonIds: parseJsonArray(event.collaboratorPersonIds),
+    },
+  });
 });
 
 missionRouter.get('/tasks', requireAuth, async (req: AuthedRequest, res) => {
@@ -292,11 +343,21 @@ const taskCreateSchema = z.object({
   description: z.string().optional(),
   ownerPersonId: z.string().optional(),
   systemId: z.string().optional(),
-  visibility: z.enum(['GENERAL', 'MINISTRY', 'SELECTED']).optional(),
+  visibility: z
+    .enum([
+      'GENERAL',
+      'MINISTRY',
+      'SELECTED',
+      'CHURCH',
+      'MINISTRY_PRIVATE',
+      'SELECTIVE',
+    ])
+    .optional(),
   status: z.string().optional(),
   dueDate: z.string().optional(),
   grantsSystemAccess: z.boolean().optional(),
   contextType: z.string().optional(),
+  contextId: z.string().optional(),
   contextLabel: z.string().optional(),
 });
 
@@ -324,15 +385,22 @@ missionRouter.post('/tasks', requireAuth, async (req: AuthedRequest, res) => {
       ownerPersonId: parsed.data.ownerPersonId ?? req.auth!.personId,
       createdByPersonId: req.auth!.personId,
       systemId,
-      visibility: parsed.data.visibility ?? 'MINISTRY',
+      visibility: toStoredVisibility(parsed.data.visibility),
       status: parsed.data.status ?? 'TODO',
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
       grantsSystemAccess: parsed.data.grantsSystemAccess ?? false,
       contextType: parsed.data.contextType ?? 'GENERAL',
+      contextId: parsed.data.contextId,
       contextLabel: parsed.data.contextLabel,
     },
   });
-  res.status(201).json({ task });
+  res.status(201).json({
+    task: {
+      ...task,
+      visibility: toStoredVisibility(task.visibility),
+      helperPersonIds: parseJsonArray(task.helperPersonIds),
+    },
+  });
 });
 
 missionRouter.get('/projects', requireAuth, async (req: AuthedRequest, res) => {
@@ -436,7 +504,7 @@ missionRouter.post('/projects', requireAuth, async (req: AuthedRequest, res) => 
       name: parsed.data.name,
       description: parsed.data.description ?? '',
       ownerSystemId: parsed.data.ownerSystemId,
-      visibility: parsed.data.visibility ?? 'MINISTRY',
+      visibility: toStoredVisibility(parsed.data.visibility),
       status: parsed.data.status ?? 'DRAFT',
       willSpend: parsed.data.willSpend ?? false,
       fundId: parsed.data.fundId,
@@ -445,5 +513,12 @@ missionRouter.post('/projects', requireAuth, async (req: AuthedRequest, res) => 
       createdByPersonId: req.auth!.personId,
     },
   });
-  res.status(201).json({ project });
+  res.status(201).json({
+    project: {
+      ...project,
+      visibility: toStoredVisibility(project.visibility),
+    },
+  });
 });
+
+registerMissionExtendedRoutes(missionRouter);
