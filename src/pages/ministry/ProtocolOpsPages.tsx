@@ -189,7 +189,7 @@ export function ProtocolFinancePage() {
         </div>
         {canVerify && (
           <p className="muted" style={{ marginBottom: 0, marginTop: '0.65rem' }}>
-            <Link to="/systems/finance/funds/fund-protocol">
+            <Link to="/systems/protocol/finance">
               Open Protocol fund ledger →
             </Link>
           </p>
@@ -339,16 +339,32 @@ export function ProtocolFinancePage() {
       <div className="panel">
         {filtered.length === 0 ? (
           <EmptyState
-            title="No contributions"
-            detail="Submit one, or wait for roster members to contribute."
+            title={
+              all.length > 0 ? 'No contributions match' : 'No contributions'
+            }
+            detail={
+              all.length > 0
+                ? 'This filter is empty. Switch to All to see contributions.'
+                : 'Submit one, or wait for roster members to contribute.'
+            }
             action={
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setCreateOpen(true)}
-              >
-                Submit contribution
-              </button>
+              all.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setStatusFilter('all')}
+                >
+                  Show all
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Submit contribution
+                </button>
+              )
             }
           />
         ) : (
