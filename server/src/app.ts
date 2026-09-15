@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
 import { errorHandler } from './middleware/http.js';
+import { attentionRouter } from './routes/attention.js';
 import { authRouter } from './routes/auth.js';
 import { authorizeRouter } from './routes/authorize.js';
 import { assignmentsRouter } from './routes/assignments.js';
@@ -37,6 +38,7 @@ export function createApp() {
         grants: 'GET /api/authorize/grants',
         funds: 'GET /api/funds',
         mission: 'GET/POST /api/mission/{programs|events|tasks|projects}',
+        attention: 'GET /api/attention',
         contributions:
           'GET/POST /api/contributions, POST /api/contributions/:id/verify',
         assignments: 'GET/POST /api/assignments',
@@ -53,6 +55,7 @@ export function createApp() {
   app.use('/api/authorize', authorizeRouter);
   app.use('/api/funds', fundsRouter);
   app.use('/api/mission', missionRouter);
+  app.use('/api/attention', attentionRouter);
   app.use('/api/contributions', contributionsRouter);
   app.use('/api/assignments', assignmentsRouter);
   app.use('/api/sso', ssoRouter);
