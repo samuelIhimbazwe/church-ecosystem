@@ -4,6 +4,11 @@ import {
   ministryOfficeMayAccessModule,
   resolveMinistryBoardOffice,
 } from './ministryNavAccess';
+import {
+  oversightMayAccessModule,
+  resolvePeerEntry,
+} from './oversightAccess';
+import { oversightReportsService } from '../services/oversightReportsService';
 import { authorizeFinanceFund, visibleFundIds } from './financeAccess';
 import { choirOfficeMayAccess } from './choirNav';
 import {
@@ -42,7 +47,7 @@ describe('ministry member module allow-list', () => {
     ).toBe(true);
   });
 
-  it('allows treasurer full suite and president finance+reports only', () => {
+  it('allows treasurer full suite; president oversight finance (not donations)', () => {
     expect(
       ministryOfficeMayAccessModule('sys-youth', 'TREASURER', 'donations'),
     ).toBe(true);
@@ -50,7 +55,28 @@ describe('ministry member module allow-list', () => {
       ministryOfficeMayAccessModule('sys-youth', 'PRESIDENT', 'finance'),
     ).toBe(true);
     expect(
+      ministryOfficeMayAccessModule('sys-youth', 'PRESIDENT', 'accounting'),
+    ).toBe(true);
+    expect(
+      ministryOfficeMayAccessModule('sys-youth', 'PRESIDENT', 'assets'),
+    ).toBe(true);
+    expect(
+      ministryOfficeMayAccessModule('sys-youth', 'PRESIDENT', 'reports'),
+    ).toBe(true);
+    expect(
       ministryOfficeMayAccessModule('sys-youth', 'PRESIDENT', 'donations'),
+    ).toBe(false);
+  });
+
+  it('music president can open accounting and assets', () => {
+    expect(
+      ministryOfficeMayAccessModule('sys-music', 'PRESIDENT', 'accounting'),
+    ).toBe(true);
+    expect(
+      ministryOfficeMayAccessModule('sys-music', 'PRESIDENT', 'assets'),
+    ).toBe(true);
+    expect(
+      ministryOfficeMayAccessModule('sys-music', 'PRESIDENT', 'donations'),
     ).toBe(false);
   });
 
@@ -72,6 +98,235 @@ describe('resolveMinistryBoardOffice', () => {
       POSITIONS,
     );
     expect(office).toBe('PRESIDENT');
+  });
+
+  it('does not promote pastor governance to PRESIDENT on youth', () => {
+    const office = resolveMinistryBoardOffice(
+      'p-pastor',
+      'sys-youth',
+      POSITIONS,
+    );
+    expect(office).toBe('MEMBER');
+  });
+});
+
+describe('peer oversight entry', () => {
+  it('pastor enters youth as oversight, not officer', () => {
+    const entry = resolvePeerEntry('p-pastor', 'sys-youth', POSITIONS);
+    expect(entry.kind).toBe('oversight');
+    expect(oversightMayAccessModule('sys-youth', 'assets')).toBe(true);
+    expect(oversightMayAccessModule('sys-youth', 'finance')).toBe(false);
+    expect(oversightMayAccessModule('sys-youth', 'donations')).toBe(false);
+    expect(oversightMayAccessModule('sys-youth', 'programs')).toBe(true);
+  });
+
+  it('youth president stays officer on youth', () => {
+    const entry = resolvePeerEntry('p-youth-leader', 'sys-youth', POSITIONS);
+    expect(entry.kind).toBe('officer');
+    expect(entry.office).toBe('PRESIDENT');
+  });
+
+  it('catechist enters youth as oversight with ops depth modules', () => {
+    const entry = resolvePeerEntry('p-catechist', 'sys-youth', POSITIONS);
+    expect(entry.kind).toBe('oversight');
+    expect(oversightMayAccessModule('sys-youth', 'tasks', 'ops')).toBe(true);
+  });
+
+  it('ordained pastor (Claire) gets light oversight nav', () => {
+    const entry = resolvePeerEntry('p-assistant', 'sys-youth', POSITIONS);
+    expect(entry.kind).toBe('oversight');
+    expect(oversightMayAccessModule('sys-youth', 'tasks', 'light')).toBe(false);
+    expect(oversightMayAccessModule('sys-youth', 'programs', 'light')).toBe(
+      true,
+    );
+  });
+
+  it('secretary is not peer oversight by role alone', () => {
+    const entry = resolvePeerEntry('p-secretary', 'sys-youth', POSITIONS);
+    expect(entry.kind).toBe('member');
+  });
+
+  it('pastor cannot VIEW ministry finance via governance grants', () => {
+    const grants = grantsFor('p-pastor');
+    const fin = authorize({
+      personId: 'p-pastor',
+      systemId: 'sys-youth',
+      resource: 'MINISTRY_FINANCE',
+      action: 'VIEW',
+    }, grants);
+    expect(fin.allowed).toBe(false);
+  });
+
+  it('pastor can ENTER youth and VIEW programs (oversight)', () => {
+    const grants = grantsFor('p-pastor');
+    expect(
+      authorize(
+        {
+          personId: 'p-pastor',
+          systemId: 'sys-youth',
+          resource: 'SYSTEM',
+          action: 'ENTER',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+    expect(
+      authorize(
+        {
+          personId: 'p-pastor',
+          systemId: 'sys-youth',
+          resource: 'PROGRAM',
+          action: 'VIEW',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+    expect(
+      authorize(
+        {
+          personId: 'p-pastor',
+          systemId: 'sys-youth',
+          resource: 'PROGRAM',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it('youth system admin gets SYSTEM_CONFIG without MINISTRY_FINANCE', () => {
+    const grants = grantsFor('p-member');
+    expect(
+      authorize(
+        {
+          personId: 'p-member',
+          systemId: 'sys-youth',
+          resource: 'SYSTEM_CONFIG',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+    expect(
+      authorize(
+        {
+          personId: 'p-member',
+          systemId: 'sys-youth',
+          resource: 'MINISTRY_FINANCE',
+          action: 'VIEW',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it('church leader can MANAGE board; can VIEW board meetings list', () => {
+    const grants = grantsFor('p-pastor');
+    expect(
+      authorize(
+        {
+          personId: 'p-pastor',
+          systemId: 'sys-main',
+          resource: 'BOARD',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+  });
+
+  it('ordained pastor cannot MANAGE programs on main (less institutional power)', () => {
+    const grants = grantsFor('p-assistant');
+    expect(
+      authorize(
+        {
+          personId: 'p-assistant',
+          systemId: 'sys-main',
+          resource: 'PROGRAM',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+    expect(
+      authorize(
+        {
+          personId: 'p-assistant',
+          systemId: 'sys-main',
+          resource: 'PROGRAM',
+          action: 'VIEW',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+    expect(
+      authorize(
+        {
+          personId: 'p-assistant',
+          systemId: 'sys-main',
+          resource: 'BOARD',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it('catechist can MANAGE events on main (ops) but not BOARD MANAGE', () => {
+    const grants = grantsFor('p-catechist');
+    expect(
+      authorize(
+        {
+          personId: 'p-catechist',
+          systemId: 'sys-main',
+          resource: 'EVENT',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(true);
+    expect(
+      authorize(
+        {
+          personId: 'p-catechist',
+          systemId: 'sys-main',
+          resource: 'BOARD',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+    expect(
+      authorize(
+        {
+          personId: 'p-catechist',
+          systemId: 'sys-main',
+          resource: 'POSITION',
+          action: 'MANAGE',
+        },
+        grants,
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it('church leader can VIEW general fund (church-wide contributions)', () => {
+    const grants = grantsFor('p-pastor');
+    expect(
+      authorizeFinanceFund('p-pastor', 'fund-general', 'VIEW', grants).allowed,
+    ).toBe(true);
+    expect(
+      authorizeFinanceFund('p-pastor', 'fund-general', 'APPROVE', grants)
+        .allowed,
+    ).toBe(true);
+  });
+});
+
+describe('leadership pack money privacy', () => {
+  it('never exposes ministry vault totals', async () => {
+    const { reportsService } = await import('../services/reportsService');
+    const pack = reportsService.leadershipPack();
+    expect(pack.money.ministryVaultBalance).toBe(0);
+    expect(reportsService.leadershipCsv()).not.toContain('ministry_vaults');
   });
 });
 
