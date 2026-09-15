@@ -33,23 +33,13 @@ function officeFromPosition(p: Position): string | undefined {
   );
 }
 
-/** Resolve standing board office for this system, else MEMBER. */
+/** Resolve standing board office for this system, else MEMBER.
+ *  Church governance is NOT promoted to PRESIDENT — use resolvePeerEntry() for oversight. */
 export function resolveMinistryBoardOffice(
   personId: string,
   systemId: SystemId,
   positions: Position[],
 ): MinistryBoardOffice {
-  // Church governance may enter any ministry with board-level modules.
-  for (const p of positions) {
-    if (p.personId !== personId || p.status !== 'ACTIVE') continue;
-    if (
-      p.systemRole === 'CHURCH_LEADER' ||
-      p.systemRole === 'ASSISTANT_PASTOR' ||
-      p.systemRole === 'CHURCH_SECRETARY'
-    ) {
-      return 'PRESIDENT';
-    }
-  }
   for (const p of positions) {
     if (p.personId !== personId || p.systemId !== systemId) continue;
     if (p.status !== 'ACTIVE') continue;
@@ -121,6 +111,16 @@ const FINANCE_SUITE = [
   'accounting',
   'assets',
   'reports',
+  'ledger',
+] as const;
+
+/** Oversight view — no donations/sponsors/fundraising (treasurer money intake). */
+const PRESIDENT_FINANCE_VIEW = [
+  'finance',
+  'accounting',
+  'assets',
+  'reports',
+  'ledger',
 ] as const;
 
 const PEER_OPS = [
@@ -166,8 +166,7 @@ function boardModulesFor(
       'schedule-drafts',
       'schedule-published',
       'schedule-inbox',
-      'finance',
-      'reports',
+      ...PRESIDENT_FINANCE_VIEW,
     ];
   }
 
@@ -224,7 +223,7 @@ function boardModulesFor(
     return [...PEER_OPS];
   }
 
-  // PRESIDENT / VP — operational breadth; finance view modules included
+  // PRESIDENT / VP — operational breadth + finance oversight (view)
   if (systemId === 'sys-worship') {
     return [
       'home',
@@ -236,8 +235,7 @@ function boardModulesFor(
       'rehearsals',
       'roster',
       'my-contributions',
-      'finance',
-      'reports',
+      ...PRESIDENT_FINANCE_VIEW,
     ];
   }
   if (systemId === 'sys-protocol') {
@@ -268,9 +266,9 @@ function boardModulesFor(
       'finance',
     ];
   }
-  // Youth + peer kit — board ops; full money suite is treasurer-only
+  // Youth + peer kit — board ops; intake suites stay treasurer-only
   if (office === 'PRESIDENT' || office === 'VP') {
-    return [...PEER_OPS, 'finance', 'reports'];
+    return [...PEER_OPS, ...PRESIDENT_FINANCE_VIEW];
   }
   return [...PEER_OPS, ...FINANCE_SUITE];
 }
