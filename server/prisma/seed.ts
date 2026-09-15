@@ -144,11 +144,12 @@ const SYSTEMS = [
   {
     id: 'sys-finance',
     code: 'FINANCE',
-    name: 'Finance System',
+    name: 'Finance (shared module)',
     shortName: 'Finance',
     kind: 'SHARED',
-    basePath: '/systems/finance',
-    description: 'Shared ledger and org-private vaults',
+    basePath: '/finance',
+    description:
+      'Shared fund ACL + church treasury module — used inside Main and ministries',
   },
 ] as const;
 
