@@ -149,16 +149,6 @@ export const WORSHIP_DUTIES: WorshipDutySlot[] = [
     status: 'ASSIGNED',
   },
   {
-    id: 'duty-concert-usher',
-    orgUnitId: WORSHIP_OU,
-    label: 'Thanksgiving Concert',
-    eventId: 'evt-worship-concert-2026',
-    serviceDate: '2026-11-22',
-    role: 'USHER',
-    personId: 'p-member',
-    status: 'ASSIGNED',
-  },
-  {
     id: 'duty-sunday-section',
     orgUnitId: WORSHIP_OU,
     label: 'Sunday service',
