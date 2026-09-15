@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
+import type { CareEscalateTo, WellbeingCategory } from '../../domain/types';
 import { deaconService, financeService, peopleService } from '../../services';
 import { MinistryHomeCard } from './MinistryShell';
 
@@ -127,17 +128,27 @@ export function DeaconRosterPage() {
 }
 
 export function DeaconCasesPage() {
-  const { account, can, authorize } = useAuth();
+  const { account, can, authorize, roles } = useAuth();
   const canView = can('DEACON_CARE', 'VIEW', SYS);
   const canManage = can('DEACON_CARE', 'MANAGE', SYS);
   const [, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
   const cases = deaconService.listCases();
+  const isLeader = roles.includes('CHURCH_LEADER');
 
   const [title, setTitle] = useState('');
   const [personId, setPersonId] = useState('');
   const [priority, setPriority] = useState<'LOW' | 'NORMAL' | 'HIGH'>('NORMAL');
-  const [notes, setNotes] = useState('');
+  const [category, setCategory] = useState<WellbeingCategory>('SICK');
+  const [categoryDetail, setCategoryDetail] = useState('');
+  const [privateNotes, setPrivateNotes] = useState('');
+  const [sickLocation, setSickLocation] = useState<
+    '' | 'HOSPITAL' | 'HOME' | 'OTHER'
+  >('');
+  const [escalateTo, setEscalateTo] = useState<CareEscalateTo | ''>(
+    'CHURCH_LEADER',
+  );
+  const [formMsg, setFormMsg] = useState('');
 
   if (!canView) {
     return (
@@ -152,17 +163,28 @@ export function DeaconCasesPage() {
     e.preventDefault();
     if (!canManage || !account) return;
     authorize('DEACON_CARE', 'MANAGE', SYS);
-    deaconService.openCase({
+    const r = deaconService.submitCase({
       title,
       personId: personId || undefined,
       priority,
-      notes,
-      openedOn: new Date().toISOString().slice(0, 10),
+      category,
+      categoryDetail: categoryDetail || undefined,
+      privateNotes: privateNotes || undefined,
+      sickLocation: sickLocation || undefined,
+      escalateTo: escalateTo || undefined,
+      submittedByPersonId: account.personId,
+      submittedByRole: 'DEACON',
       assignedPersonId: account.personId,
     });
+    if (!r.ok) {
+      setFormMsg(r.reason);
+      return;
+    }
     setTitle('');
     setPersonId('');
-    setNotes('');
+    setCategoryDetail('');
+    setPrivateNotes('');
+    setFormMsg('');
     refresh();
   }
 
@@ -171,16 +193,25 @@ export function DeaconCasesPage() {
       <div className="panel">
         <h2 style={{ marginTop: 0 }}>Care cases</h2>
         <p className="muted">
-          Household care tracking — not pastoral 360 edit (that stays in Main)
+          Submit → deacon leaders prioritize → escalate upward with status.
+          Leader sees situation type, not private clinical notes.
         </p>
+        {isLeader ? (
+          <p className="muted" style={{ fontSize: '0.9rem' }}>
+            Your upward view (summaries):{' '}
+            {deaconService.listCasesForOversight('CHURCH_LEADER').length} case(s)
+            escalated to Church Leader
+          </p>
+        ) : null}
         <table className="table">
           <thead>
             <tr>
               <th>Case</th>
+              <th>Category</th>
               <th>Person / household</th>
               <th>Priority</th>
               <th>Status</th>
-              <th>Assigned</th>
+              <th>Escalate</th>
               <th />
             </tr>
           </thead>
@@ -189,11 +220,18 @@ export function DeaconCasesPage() {
               <tr key={c.id}>
                 <td>
                   <strong>{c.title}</strong>
-                  {c.notes && (
-                    <div className="muted" style={{ fontSize: '0.85rem' }}>
-                      {c.notes}
+                  <div className="muted" style={{ fontSize: '0.85rem' }}>
+                    {c.summary}
+                  </div>
+                  {canManage && c.privateNotes ? (
+                    <div className="muted" style={{ fontSize: '0.8rem' }}>
+                      Private: {c.privateNotes}
                     </div>
-                  )}
+                  ) : null}
+                </td>
+                <td>
+                  {deaconService.WELLBEING_LABELS[c.category]}
+                  {c.categoryDetail ? ` · ${c.categoryDetail}` : ''}
                 </td>
                 <td>
                   {c.personId
@@ -205,26 +243,48 @@ export function DeaconCasesPage() {
                   <span
                     className={`badge ${c.status === 'CLOSED' ? 'planned' : ''}`}
                   >
-                    {c.status}
+                    {deaconService.CARE_STATUS_LABELS[c.status] ?? c.status}
                   </span>
                 </td>
-                <td>
-                  {c.assignedPersonId
-                    ? deaconService.personLabel(c.assignedPersonId)
-                    : '—'}
-                </td>
+                <td>{c.escalateTo ?? '—'}</td>
                 <td>
                   {canManage && c.status !== 'CLOSED' && (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => {
-                        deaconService.updateCaseStatus(c.id, 'CLOSED');
-                        refresh();
-                      }}
-                    >
-                      Close
-                    </button>
+                    <div className="row" style={{ gap: '0.35rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          deaconService.prioritizeCase(c.id, {
+                            status: 'HANDLING',
+                          });
+                          refresh();
+                        }}
+                      >
+                        Handling
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          deaconService.prioritizeCase(c.id, {
+                            status: 'WILL_HANDLE',
+                          });
+                          refresh();
+                        }}
+                      >
+                        Will handle
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          deaconService.updateCaseStatus(c.id, 'CLOSED');
+                          refresh();
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -235,7 +295,7 @@ export function DeaconCasesPage() {
 
       {canManage && (
         <div className="panel">
-          <h3>Open case</h3>
+          <h3>Submit case</h3>
           <form className="stack" onSubmit={onOpen}>
             <div className="field">
               <label htmlFor="dtitle">Title</label>
@@ -246,6 +306,56 @@ export function DeaconCasesPage() {
                 required
               />
             </div>
+            <div className="field">
+              <label htmlFor="dcat">Wellbeing category</label>
+              <select
+                id="dcat"
+                value={category}
+                onChange={(e) =>
+                  setCategory(e.target.value as WellbeingCategory)
+                }
+              >
+                {(
+                  Object.keys(deaconService.WELLBEING_LABELS) as WellbeingCategory[]
+                )
+                  .filter((k) => k !== 'NORMAL')
+                  .map((k) => (
+                    <option key={k} value={k}>
+                      {deaconService.WELLBEING_LABELS[k]}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            {(category === 'OTHER_ISSUE' || category === 'BREAKTHROUGH') && (
+              <div className="field">
+                <label htmlFor="ddetail">Name it</label>
+                <input
+                  id="ddetail"
+                  value={categoryDetail}
+                  onChange={(e) => setCategoryDetail(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+            {category === 'SICK' && (
+              <div className="field">
+                <label htmlFor="dloc">Where</label>
+                <select
+                  id="dloc"
+                  value={sickLocation}
+                  onChange={(e) =>
+                    setSickLocation(
+                      e.target.value as '' | 'HOSPITAL' | 'HOME' | 'OTHER',
+                    )
+                  }
+                >
+                  <option value="">—</option>
+                  <option value="HOSPITAL">Hospital</option>
+                  <option value="HOME">Home</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+            )}
             <div className="field">
               <label htmlFor="dperson">Person (optional)</label>
               <select
@@ -276,16 +386,32 @@ export function DeaconCasesPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="dnotes">Notes</label>
+              <label htmlFor="desc">Escalate to</label>
+              <select
+                id="desc"
+                value={escalateTo}
+                onChange={(e) =>
+                  setEscalateTo(e.target.value as CareEscalateTo | '')
+                }
+              >
+                <option value="">— after prioritizing —</option>
+                <option value="CATECHIST">Catechist</option>
+                <option value="PASTOR">Pastor</option>
+                <option value="CHURCH_LEADER">Church Leader</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="dnotes">Private notes (not for Leader view)</label>
               <textarea
                 id="dnotes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                value={privateNotes}
+                onChange={(e) => setPrivateNotes(e.target.value)}
                 rows={2}
               />
             </div>
+            {formMsg ? <p className="error">{formMsg}</p> : null}
             <button type="submit" className="btn">
-              Open case
+              Submit case
             </button>
           </form>
         </div>
@@ -426,7 +552,8 @@ export function DeaconVisitsPage() {
 }
 
 export function DeaconFinancePage() {
-  const { account, can, authorize } = useAuth();
+  const { account, can, authorize, roles } = useAuth();
+  const isLeader = roles.includes('CHURCH_LEADER');
   const canView = can('DEACON_FINANCE', 'VIEW', SYS);
   const canManage = can('DEACON_FINANCE', 'MANAGE', SYS);
   const fundOk =
@@ -459,7 +586,7 @@ export function DeaconFinancePage() {
         <h2 style={{ marginTop: 0 }}>Deacon fund</h2>
         <div className="row">
           <span className="badge">{balance.toLocaleString()} RWF</span>
-          <Link to="/systems/finance/funds/fund-deacon">Open ledger →</Link>
+          <Link to="/systems/deacon/finance">Open ledger →</Link>
           <Link to="/systems/deacon/my-contributions">My contributions →</Link>
         </div>
       </div>
@@ -532,6 +659,10 @@ export function DeaconFinancePage() {
 
       <div className="panel">
         <h3>Expenses</h3>
+        <p className="muted" style={{ fontSize: '0.9rem' }}>
+          Care spending needs Church Leader approval — wait for him (no
+          act-then-report).
+        </p>
         <table className="table">
           <thead>
             <tr>
@@ -550,11 +681,9 @@ export function DeaconFinancePage() {
                 <td>{e.description}</td>
                 <td>{e.status}</td>
                 <td>
-                  {canManage &&
-                    fundOk &&
-                    account &&
-                    e.status === 'PENDING' && (
-                      <div className="row">
+                  {account && e.status === 'PENDING' && (
+                    <div className="row">
+                      {isLeader ? (
                         <button
                           type="button"
                           className="btn"
@@ -568,8 +697,10 @@ export function DeaconFinancePage() {
                             refresh();
                           }}
                         >
-                          Approve
+                          Approve (Leader)
                         </button>
+                      ) : null}
+                      {canManage ? (
                         <button
                           type="button"
                           className="btn ghost"
@@ -584,8 +715,9 @@ export function DeaconFinancePage() {
                         >
                           Reject
                         </button>
-                      </div>
-                    )}
+                      ) : null}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
