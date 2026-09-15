@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
+import { resolvePeerEntry } from '../../domain/oversightAccess';
 import type { WorshipPaymentMethod } from '../../domain/types';
 import { worshipService, financeService } from '../../services';
 
@@ -593,10 +594,13 @@ export function WorshipAccountingPage() {
 }
 
 export function WorshipAssetsPage() {
-  const { can } = useAuth();
+  const { account, can, positions } = useAuth();
   const { tick, refresh } = useTick();
-  const canView = can('WORSHIP_FINANCE', 'VIEW', SYS);
-  const canManage = can('WORSHIP_FINANCE', 'MANAGE', SYS);
+  const oversight =
+    !!account &&
+    resolvePeerEntry(account.personId, SYS, positions).kind === 'oversight';
+  const canView = can('WORSHIP_FINANCE', 'VIEW', SYS) || oversight;
+  const canManage = can('WORSHIP_FINANCE', 'MANAGE', SYS) && !oversight;
   const assets = useMemo(
     () => worshipService.listAssets(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
