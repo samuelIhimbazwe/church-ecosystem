@@ -133,7 +133,7 @@ export let PERSON_TIMELINE: PersonTimelineEvent[] = [
     personId: 'p-member',
     at: '2026-08-01',
     kind: 'MINISTRY',
-    title: 'Usher lead — Thanksgiving Concert',
+    title: 'Protocol lead — Thanksgiving Concert',
     detail: 'Temporary event assignment',
   },
   {
