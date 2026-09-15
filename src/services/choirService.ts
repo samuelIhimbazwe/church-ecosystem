@@ -368,15 +368,15 @@ export const choirService = {
     const id = nid('ccon');
     const now = new Date().toISOString();
     const teamId = this.teamIdForPerson(input.personId);
-    const familyRail =
-      teamId &&
-      CHOIR_FAMILY_RAILS.find(
-        (r) =>
-          r.teamId === teamId &&
-          r.active &&
-          r.kind === (input.paymentMethod === 'BANK' ? 'BANK' : 'MOMO') &&
-          inActiveChoir(r),
-      );
+    const familyRail = teamId
+      ? CHOIR_FAMILY_RAILS.find(
+          (r) =>
+            r.teamId === teamId &&
+            r.active &&
+            r.kind === (input.paymentMethod === 'BANK' ? 'BANK' : 'MOMO') &&
+            inActiveChoir(r),
+        )
+      : undefined;
     pushChoirContribution({
       id,
       orgUnitId,
