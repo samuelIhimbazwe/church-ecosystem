@@ -11,9 +11,9 @@ export function SystemsPage() {
       <div className="panel">
         <h2>Systems</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Peer applications in the ADEPR Kacyiru ecosystem. Ministries are full
-          systems with their own login and home — not modules inside Main Church.
-          Open opens each system in a new browser tab.
+          Peer applications in the ADEPR Kacyiru ecosystem, grouped as
+          Ministries, Choirs, and Others. Open opens each system in a new
+          browser tab.
         </p>
       </div>
 
