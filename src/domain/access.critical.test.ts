@@ -8,7 +8,6 @@ import {
   oversightMayAccessModule,
   resolvePeerEntry,
 } from './oversightAccess';
-import { oversightReportsService } from '../services/oversightReportsService';
 import { authorizeFinanceFund, visibleFundIds } from './financeAccess';
 import { choirOfficeMayAccess } from './choirNav';
 import {
