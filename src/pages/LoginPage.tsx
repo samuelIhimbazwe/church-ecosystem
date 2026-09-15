@@ -1,14 +1,19 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { apiBaseUrl, apiHealth, isApiEnabled } from '../api';
+import { apiHealth, isApiEnabled } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { isChoirOrgUnitId, choirName } from '../domain/choirCatalog';
 import type { SystemId } from '../domain/types';
-import { systemsService } from '../services';
+import { systemsService, authService } from '../services';
+import { Spinner } from '../components/ui/Spinner';
+import { TextField } from '../components/ui/Field';
 
 const DEMO_HINTS = [
-  { user: 'pastor', pass: 'pastor123', note: '360° member records · also on API' },
-  { user: 'assistant', pass: 'assist123', note: 'Assistant pastor — full profile' },
-  { user: 'secretary', pass: 'secret123', note: 'Secretary — full profile' },
+  { user: 'pastor', pass: 'pastor123', note: 'Church Leader · oversight into peer systems' },
+  { user: 'assistant', pass: 'assist123', note: 'Pastor (ordained) · lighter oversight' },
+  { user: 'catechist', pass: 'catechist123', note: 'Umwarimu · Itorero ops oversight' },
+  { user: 'secretary', pass: 'secret123', note: 'Church Secretary (appointment)' },
+  { user: 'patrick', pass: 'member123', note: 'Member · Youth System Admin (config only)' },
   { user: 'treasurer', pass: 'treas123', note: 'Church Treasurer · also on API' },
   { user: 'choirtreas', pass: 'choir123', note: 'Choir finance (local seed)' },
   { user: 'worship', pass: 'worship123', note: 'Worship leader' },
@@ -22,7 +27,7 @@ const DEMO_HINTS = [
 ];
 
 export function LoginPage() {
-  const { account, login, apiEnabled } = useAuth();
+  const { account, login, apiEnabled, setActiveChoir } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -33,7 +38,13 @@ export function LoginPage() {
     apiEnabled ? 'checking' : 'off',
   );
 
+  const [showDemos, setShowDemos] = useState(false);
+
   const targetSystemId = (params.get('system') as SystemId | null) ?? 'sys-main';
+  const choirOrgUnitId = params.get('choir');
+  /** Demo accounts + API chrome: DEV builds or `?demo=1`. */
+  const showOpsChrome =
+    import.meta.env.DEV || params.get('demo') === '1';
   const targetSystem = useMemo(
     () =>
       systemsService.getById(targetSystemId) ??
@@ -42,6 +53,10 @@ export function LoginPage() {
   );
 
   useEffect(() => {
+    if (!showOpsChrome) {
+      setApiStatus('off');
+      return;
+    }
     if (!isApiEnabled()) {
       setApiStatus('off');
       return;
@@ -53,7 +68,22 @@ export function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showOpsChrome]);
+
+  useEffect(() => {
+    if (
+      !account ||
+      targetSystemId !== 'sys-choir' ||
+      !choirOrgUnitId ||
+      !isChoirOrgUnitId(choirOrgUnitId)
+    ) {
+      return;
+    }
+    // Avoid refresh loops when already scoped.
+    const current = authService.getSession()?.activeChoirOrgUnitId;
+    if (current === choirOrgUnitId) return;
+    setActiveChoir(choirOrgUnitId);
+  }, [account, targetSystemId, choirOrgUnitId, setActiveChoir]);
 
   if (account) {
     const dest =
@@ -75,6 +105,13 @@ export function LoginPage() {
         );
         return;
       }
+      if (
+        targetSystemId === 'sys-choir' &&
+        choirOrgUnitId &&
+        isChoirOrgUnitId(choirOrgUnitId)
+      ) {
+        setActiveChoir(choirOrgUnitId);
+      }
       const dest =
         targetSystemId === 'sys-main'
           ? '/'
@@ -86,42 +123,49 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card stack">
-        <div className="login-brand">
-          <img src="/brand/adepr-logo.png" alt="ADEPR" width={88} height={88} />
-          <div>
-            <h1>{targetSystem?.shortName ?? 'Sign in'}</h1>
-            <p className="muted" style={{ margin: 0 }}>
-              {targetSystem?.kind === 'MAIN'
-                ? 'Main Church System — shared identity for the ecosystem'
-                : `Direct login to ${targetSystem?.name}. Same Account as Main Church.`}
-            </p>
+    <div className="login-page login-split">
+      <div className="login-form-pane">
+        <div className="login-card stack">
+          <div className="login-brand">
+            <img src="/brand/adepr-logo.png" alt="ADEPR" width={76} height={76} />
+            <div>
+              <h1>
+                {choirOrgUnitId && isChoirOrgUnitId(choirOrgUnitId)
+                  ? choirName(choirOrgUnitId)
+                  : 'Welcome Back'}
+              </h1>
+              <p className="muted" style={{ margin: 0 }}>
+                {targetSystem?.kind === 'MAIN'
+                  ? 'Sign in to continue to your account'
+                  : choirOrgUnitId && isChoirOrgUnitId(choirOrgUnitId)
+                    ? `Direct login to this choir. Same account as Main Church.`
+                    : `Direct login to ${targetSystem?.name}. Same account as Main Church.`}
+              </p>
+              <p className="login-motto">Faith · Knowledge · Service</p>
+            </div>
           </div>
-        </div>
 
-        {apiStatus !== 'off' && (
-          <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
-            Auth:{' '}
-            {apiStatus === 'checking' && 'checking API…'}
-            {apiStatus === 'up' && (
-              <>
-                API <code>{apiBaseUrl()}</code> (hashed) · seed fallback for
-                other demo users
-              </>
-            )}
-            {apiStatus === 'down' && (
-              <>
-                API unreachable — using in-memory seed login
-              </>
-            )}
-          </p>
-        )}
+          {showOpsChrome && apiStatus !== 'off' && (
+            <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
+              Auth:{' '}
+              {apiStatus === 'checking' && 'checking API…'}
+              {apiStatus === 'up' && (
+                <>
+                  API connected · seed fallback for other demo users
+                </>
+              )}
+              {apiStatus === 'down' && (
+                <>
+                  API unreachable — using in-memory seed login
+                </>
+              )}
+            </p>
+          )}
 
-        <form className="stack" onSubmit={onSubmit}>
-          <div className="field">
-            <label htmlFor="username">Username</label>
-            <input
+          <form className="stack" onSubmit={onSubmit}>
+            <TextField
+              label="Username"
+              name="username"
               id="username"
               autoComplete="username"
               value={username}
@@ -129,10 +173,9 @@ export function LoginPage() {
               required
               disabled={busy}
             />
-          </div>
-          <div className="field">
-            <label htmlFor="password">Password</label>
-            <input
+            <TextField
+              label="Password"
+              name="password"
               id="password"
               type="password"
               autoComplete="current-password"
@@ -141,37 +184,73 @@ export function LoginPage() {
               required
               disabled={busy}
             />
-          </div>
-          {error && <div className="error">{error}</div>}
-          <button type="submit" className="btn" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+            {error && (
+              <div className="error" role="alert">
+                {error}
+              </div>
+            )}
+            <button type="submit" className="btn" disabled={busy}>
+              {busy ? (
+                <>
+                  <Spinner label="Signing in" />
+                  Signing in…
+                </>
+              ) : (
+                'Sign in'
+              )}
+            </button>
+          </form>
 
-        <div className="panel" style={{ padding: '0.85rem' }}>
-          <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>
-            Demo accounts
-          </h3>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Password</th>
-                <th>Access</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DEMO_HINTS.map((d) => (
-                <tr key={d.user}>
-                  <td>{d.user}</td>
-                  <td>{d.pass}</td>
-                  <td>{d.note}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {showOpsChrome ? (
+            <details
+              className="login-demos"
+              open={showDemos}
+              onToggle={(e) =>
+                setShowDemos((e.target as HTMLDetailsElement).open)
+              }
+            >
+              <summary>Demo accounts</summary>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Password</th>
+                    <th>Access</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DEMO_HINTS.map((d) => (
+                    <tr key={`${d.user}-${d.note}`}>
+                      <td>{d.user}</td>
+                      <td>{d.pass}</td>
+                      <td>{d.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          ) : null}
         </div>
       </div>
+
+      <aside className="login-hero-pane" aria-label="Welcome">
+        <img
+          className="login-hero-media"
+          src="/brand/church-building.png"
+          alt="ADEPR Kacyiru church building"
+        />
+        <div className="login-hero-shade" aria-hidden />
+        <div className="login-hero-copy">
+          <p className="login-hero-brand">
+            Building a brighter future through faith and service.
+          </p>
+          <p className="login-hero-line">
+            Shared identity for Main Church and every ministry system at ADEPR
+            Kacyiru.
+          </p>
+        </div>
+        <div className="login-hero-wave" aria-hidden />
+      </aside>
     </div>
   );
 }
