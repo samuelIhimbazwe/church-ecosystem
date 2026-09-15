@@ -47,6 +47,8 @@ export const CHOIR_OFFICE_NAV: Record<ChoirOffice, readonly ChoirNavKey[]> = {
     'rehearsals',
     'roster',
     'my-contributions',
+    'finance',
+    'reports',
   ],
   TREASURER: [
     'home',
@@ -68,6 +70,7 @@ export const CHOIR_OFFICE_NAV: Record<ChoirOffice, readonly ChoirNavKey[]> = {
     'roster',
     'my-contributions',
     'finance',
+    'reports',
   ],
   PRESIDENT: [
     'home',
@@ -92,9 +95,15 @@ export const CHOIR_OFFICE_NAV: Record<ChoirOffice, readonly ChoirNavKey[]> = {
     'roster',
     'my-contributions',
     'finance',
+    'reports',
   ],
   ADVISOR: ['home', 'mission', 'my-contributions'],
-  FAMILY_LEADER: ['home', 'families', 'my-contributions', 'finance'],
+  FAMILY_LEADER: [
+    'home',
+    'families',
+    'my-contributions',
+    'finance',
+  ],
   MEMBER: ['home', 'repertoire', 'rehearsals', 'my-contributions'],
 };
 
@@ -125,6 +134,7 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
       { resource: 'CHOIR_ROSTER', action: 'MANAGE' },
       { resource: 'MEMBERSHIP', action: 'VIEW' },
       { resource: 'MEMBERSHIP', action: 'MANAGE' },
+      { resource: 'CHOIR_FINANCE', action: 'VIEW' }, // confirmed + issues tables
       { resource: 'PROGRAM', action: 'VIEW' },
       { resource: 'EVENT', action: 'VIEW' },
       { resource: 'TASK', action: 'VIEW' },
@@ -145,7 +155,8 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
       { resource: 'CHOIR_ROSTER', action: 'VIEW' },
       { resource: 'CHOIR_ROSTER', action: 'MANAGE' },
       { resource: 'MEMBERSHIP', action: 'VIEW' },
-      { resource: 'CHOIR_FINANCE', action: 'VIEW' }, // all family contributions
+      { resource: 'CHOIR_FINANCE', action: 'VIEW' },
+      { resource: 'CHOIR_FINANCE', action: 'MANAGE' }, // family ops + handoffs
       { resource: 'CHOIR_REPERTOIRE', action: 'VIEW' },
       { resource: 'PROGRAM', action: 'VIEW' },
       { resource: 'EVENT', action: 'VIEW' },
@@ -158,7 +169,7 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
       { resource: 'CHOIR_ROSTER', action: 'MANAGE' },
       { resource: 'MEMBERSHIP', action: 'VIEW' },
       { resource: 'MEMBERSHIP', action: 'MANAGE' },
-      { resource: 'CHOIR_FINANCE', action: 'VIEW' }, // oversight, not vault MANAGE
+      { resource: 'CHOIR_FINANCE', action: 'VIEW' },
       { resource: 'PROGRAM', action: 'VIEW' },
       { resource: 'PROGRAM', action: 'MANAGE' },
       { resource: 'EVENT', action: 'VIEW' },
@@ -189,7 +200,8 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
     ],
     FAMILY_LEADER: [
       { resource: 'CHOIR_ROSTER', action: 'VIEW' },
-      { resource: 'CHOIR_FINANCE', action: 'VIEW' }, // own family only (UI scopes)
+      { resource: 'CHOIR_FINANCE', action: 'VIEW' },
+      { resource: 'CHOIR_FINANCE', action: 'MANAGE' }, // confirm family claims
       { resource: 'CHOIR_REPERTOIRE', action: 'VIEW' },
     ],
     MEMBER: [
@@ -230,7 +242,19 @@ export function choirOfficeIsTreasurer(office: ChoirOffice | null): boolean {
   return office === 'TREASURER';
 }
 
-/** Contribution rollup pages — treasurer, coordinator, president, VP, family leader. */
+/** Family-gate Confirm/Partial/Decline on member claims. */
+export function choirOfficeIsFamilyLeader(office: ChoirOffice | null): boolean {
+  return office === 'FAMILY_LEADER';
+}
+
+/** Live oversight of claims + handoffs (treasurer + coordinator). */
+export function choirOfficeIsContributionOversight(
+  office: ChoirOffice | null,
+): boolean {
+  return office === 'TREASURER' || office === 'COORDINATOR';
+}
+
+/** Contribution rollup pages — treasurer, coordinator, president, VP, family leader, secretary. */
 export function choirOfficeMayViewFinanceModule(
   office: ChoirOffice | null,
 ): boolean {
@@ -239,7 +263,21 @@ export function choirOfficeMayViewFinanceModule(
     office === 'COORDINATOR' ||
     office === 'PRESIDENT' ||
     office === 'VP' ||
+    office === 'SECRETARY' ||
     office === 'FAMILY_LEADER'
+  );
+}
+
+/** Final confirmed + issues tables (leadership view). */
+export function choirOfficeMayViewContributionLedgers(
+  office: ChoirOffice | null,
+): boolean {
+  return (
+    office === 'TREASURER' ||
+    office === 'COORDINATOR' ||
+    office === 'PRESIDENT' ||
+    office === 'VP' ||
+    office === 'SECRETARY'
   );
 }
 
@@ -247,4 +285,20 @@ export function choirOfficeMayViewAllFamilies(
   office: ChoirOffice | null,
 ): boolean {
   return office === 'TREASURER' || office === 'COORDINATOR';
+}
+
+/** Whole-choir (MINISTRY) goal visibility. */
+export function choirOfficeMayViewMinistryGoal(
+  office: ChoirOffice | null,
+  drivePublic?: boolean,
+): boolean {
+  if (drivePublic) return true;
+  return (
+    office === 'TREASURER' ||
+    office === 'COORDINATOR' ||
+    office === 'PRESIDENT' ||
+    office === 'VP' ||
+    office === 'SECRETARY' ||
+    office === 'MUSIC_DIRECTOR'
+  );
 }
