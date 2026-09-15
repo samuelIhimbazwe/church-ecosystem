@@ -32,6 +32,14 @@ export interface MinistryContributionType {
 
 export type MinistryContributionStatus =
   | 'PENDING'
+  /** Family leader confirmed payment into family MoMo/bank. */
+  | 'FAMILY_CONFIRMED'
+  | 'FAMILY_PARTIAL'
+  | 'FAMILY_DECLINED'
+  /** Batched upward in the choir money chain. */
+  | 'AT_COORDINATOR'
+  | 'AT_TREASURER'
+  /** Final outcomes (treasurer / vault). */
   | 'CONFIRMED'
   | 'PARTIAL'
   | 'DECLINED';
@@ -46,10 +54,19 @@ export interface MinistryContributionDrive {
   orgUnitId?: string;
   name: string;
   typeId?: string;
+  /** Mirrors type frequency for display; type remains source of category. */
+  frequency?: 'ONCE' | 'MONTHLY' | 'EVENT';
   startsOn: string;
   endsOn?: string;
   status: 'ACTIVE' | 'CLOSED';
   description?: string;
+  /**
+   * When false, MINISTRY (whole-choir) goal is hidden from family leaders
+   * and members. Choir leaders always see it.
+   */
+  ministryGoalPublic?: boolean;
+  createdByPersonId?: string;
+  createdAt?: string;
 }
 
 /**
@@ -72,13 +89,15 @@ export interface MinistryContributionGoal {
 /**
  * Member contribution claim.
  *
- * Flow: member submits → optional receive (cash/MoMo handoff) →
- * treasurer verify → post to org-private fund vault.
+ * Choir money chain (Ijwi model):
+ * member claim → family leader Confirm/Partial/Decline (family rail) →
+ * family leader batches to coordinator → coordinator batches to treasurer →
+ * treasurer finalizes into choir vault.
  *
  * - giver: personId + occurredOn + submittedAt
- * - payment: paymentMethod (+ evidenceNote)
- * - receiver: receivedByPersonId + receivedAt (who took the money)
- * - verifier: verifiedByPersonId + verifiedAt (who confirmed → ledger)
+ * - payment: paymentMethod (+ evidenceNote) toward family rail
+ * - familyResponse*: family leader decision
+ * - verifier: verifiedByPersonId + verifiedAt (final / vault)
  */
 export interface MinistryContribution {
   id: string;
@@ -88,9 +107,11 @@ export interface MinistryContribution {
   typeId: string;
   driveId?: string;
   amount: number;
-  /** Confirmed amount when PARTIAL. */
+  /** Confirmed amount when PARTIAL / FAMILY_PARTIAL. */
   confirmedAmount?: number;
   paymentMethod: MinistryPaymentMethod;
+  /** Family MoMo/bank rail the member paid to (when known). */
+  familyRailId?: string;
   occurredOn: string;
   status: MinistryContributionStatus;
   submittedAt: string;
@@ -99,11 +120,18 @@ export interface MinistryContribution {
   /** Who physically/digitally received the payment (may differ from verifier). */
   receivedByPersonId?: string;
   receivedAt?: string;
+  /** Family leader response (first gate). */
+  familyRespondedAt?: string;
+  familyRespondedByPersonId?: string;
+  familyResponseNote?: string;
+  familyConfirmedAmount?: number;
   verifiedAt?: string;
   verifiedByPersonId?: string;
   verifyNote?: string;
   financeTxnId?: string;
   followUpId?: string;
+  handoffToCoordinatorId?: string;
+  handoffToTreasurerId?: string;
   /** Optional stewardship tag — confirmed gift lands on this programme. */
   programId?: string;
   /** Optional stewardship tag — confirmed gift lands on this project. */
@@ -118,6 +146,9 @@ export interface MinistryFollowUp {
   status: 'OPEN' | 'CLOSED';
   createdAt: string;
   createdByPersonId: string;
+  resultNote?: string;
+  closedAt?: string;
+  closedByPersonId?: string;
 }
 
 /** External donor gift — not a member contribution claim. */
@@ -226,6 +257,9 @@ export interface MinistryExpenseRecord {
   recordedByPersonId: string;
   approvedByPersonId?: string;
   financeTxnId?: string;
+  /** When set, approve increments stewardship.usedCost. */
+  programId?: string;
+  projectId?: string;
 }
 
 export interface MinistryAsset {
