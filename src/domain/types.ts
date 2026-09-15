@@ -469,6 +469,8 @@ export const RESOURCE_SENSITIVITY: Record<Resource, ResourceSensitivity> = {
   DEACON_FINANCE: 'CHURCH',
   MINISTRY_FINANCE: 'CHURCH',
   AUDIT: 'CHURCH',
+  SYSTEM_CONFIG: 'CHURCH',
+  BOARD: 'CHURCH',
 };
 
 /** A concrete right held right now in a system (optionally fund-scoped). */
