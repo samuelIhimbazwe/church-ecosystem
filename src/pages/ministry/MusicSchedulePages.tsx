@@ -1,14 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
+import { Drawer } from '../../components/ui/Drawer';
 import { PageHead } from '../../components/ui/FilterBar';
 import { StatusPill } from '../../components/ui/StatusPill';
-import type { MusicHorizon } from '../../domain/musicSchedule';
+import type { MusicHorizon, MusicScheduleDraft, MusicServiceKind } from '../../domain/musicSchedule';
 import { MUSIC_SERVICE_LABELS } from '../../domain/musicSchedule';
+import {
+  ministryModulesForOffice,
+  resolveMinistryBoardOffice,
+} from '../../domain/ministryNavAccess';
 import { MUSIC_UNITS, musicUnitName } from '../../domain/musicUnits';
-import { missionService } from '../../services';
+import {
+  financeService,
+  ministryFinanceService,
+  missionService,
+} from '../../services';
 import { musicScheduleService } from '../../services/musicScheduleService';
-import { MinistryHomeCard } from './MinistryShell';
 import { MinistryMissionBoard } from './MinistryMissionBoard';
 
 const SYS = 'sys-music' as const;
@@ -17,6 +25,274 @@ const BASE = '/systems/music';
 function useTick() {
   const [tick, setTick] = useState(0);
   return { tick, refresh: () => setTick((t) => t + 1) };
+}
+
+type ScheduleEditState = {
+  serviceId: string;
+  date: string;
+  kind: MusicServiceKind;
+  /** When set, drawer focuses that choir (remove / replace). */
+  focusUnitId?: string;
+};
+
+function unitsEligibleForService(
+  kind: MusicServiceKind,
+  scheduled: string[],
+  opts?: { forReplaceOf?: string },
+): typeof MUSIC_UNITS {
+  return MUSIC_UNITS.filter((u) => {
+    if (u.id === 'mu-hope' && kind !== 'SS1') return false;
+    if (u.id === 'mu-worship' && kind !== 'TUESDAY') return false;
+    if (kind !== 'TUESDAY' && u.id === 'mu-worship') return false;
+    if (scheduled.includes(u.id) && u.id !== opts?.forReplaceOf) return false;
+    return true;
+  });
+}
+
+function ScheduleEditDrawer({
+  open,
+  target,
+  scheduled,
+  onClose,
+  onRemove,
+  onReplace,
+  onAdd,
+}: {
+  open: boolean;
+  target: ScheduleEditState | null;
+  scheduled: string[];
+  onClose: () => void;
+  onRemove: (unitId: string) => void;
+  onReplace: (fromUnitId: string, toUnitId: string) => void;
+  onAdd: (unitId: string) => void;
+}) {
+  const [action, setAction] = useState<'menu' | 'remove' | 'replace' | 'add'>(
+    'menu',
+  );
+  const [pickFrom, setPickFrom] = useState('');
+  const [pickTo, setPickTo] = useState('');
+
+  const focused = target?.focusUnitId;
+  const title = target
+    ? focused
+      ? `${musicUnitName(focused)} · ${target.date}`
+      : `Edit · ${MUSIC_SERVICE_LABELS[target.kind]} · ${target.date}`
+    : 'Edit schedule';
+
+  const targetKey = target
+    ? `${target.serviceId}:${target.focusUnitId ?? ''}`
+    : '';
+  useEffect(() => {
+    setAction('menu');
+    setPickFrom(focused ?? '');
+    setPickTo('');
+  }, [targetKey, focused]);
+
+  if (!target) return null;
+
+  const replaceCandidates = unitsEligibleForService(target.kind, scheduled, {
+    forReplaceOf: pickFrom || focused,
+  });
+  const addCandidates = unitsEligibleForService(target.kind, scheduled);
+
+  return (
+    <Drawer open={open} title={title} onClose={onClose}>
+      <div className="stack" style={{ gap: '0.75rem' }}>
+        <p className="muted" style={{ margin: 0 }}>
+          Currently:{' '}
+          {scheduled.length
+            ? scheduled.map(musicUnitName).join(' · ')
+            : 'none'}
+        </p>
+
+        {action === 'menu' && focused && (
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => onRemove(focused)}
+            >
+              Remove {musicUnitName(focused)}
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setPickFrom(focused);
+                setAction('replace');
+              }}
+            >
+              Replace {musicUnitName(focused)}
+            </button>
+          </>
+        )}
+
+        {action === 'menu' && !focused && (
+          <>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={!scheduled.length}
+              onClick={() => {
+                setPickFrom(scheduled[0] ?? '');
+                setAction('remove');
+              }}
+            >
+              Remove a choir
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={!scheduled.length}
+              onClick={() => {
+                setPickFrom(scheduled[0] ?? '');
+                setAction('replace');
+              }}
+            >
+              Replace a choir
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!addCandidates.length}
+              onClick={() => setAction('add')}
+            >
+              Add a choir
+            </button>
+          </>
+        )}
+
+        {action === 'remove' && (
+          <>
+            <label className="field">
+              Choir to remove
+              <select
+                value={pickFrom}
+                onChange={(e) => setPickFrom(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {scheduled.map((id) => (
+                  <option key={id} value={id}>
+                    {musicUnitName(id)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={!pickFrom}
+                onClick={() => pickFrom && onRemove(pickFrom)}
+              >
+                Remove
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setAction('menu')}
+              >
+                Back
+              </button>
+            </div>
+          </>
+        )}
+
+        {action === 'replace' && (
+          <>
+            {!focused && (
+              <label className="field">
+                Choir to replace
+                <select
+                  value={pickFrom}
+                  onChange={(e) => {
+                    setPickFrom(e.target.value);
+                    setPickTo('');
+                  }}
+                >
+                  <option value="">Select…</option>
+                  {scheduled.map((id) => (
+                    <option key={id} value={id}>
+                      {musicUnitName(id)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              Replace with
+              <select
+                value={pickTo}
+                onChange={(e) => setPickTo(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {replaceCandidates.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={!pickFrom || !pickTo}
+                onClick={() =>
+                  pickFrom && pickTo && onReplace(pickFrom, pickTo)
+                }
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setAction('menu')}
+              >
+                Back
+              </button>
+            </div>
+          </>
+        )}
+
+        {action === 'add' && (
+          <>
+            <label className="field">
+              Choir to add
+              <select
+                value={pickTo}
+                onChange={(e) => setPickTo(e.target.value)}
+              >
+                <option value="">Select…</option>
+                {addCandidates.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={!pickTo}
+                onClick={() => pickTo && onAdd(pickTo)}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setAction('menu')}
+              >
+                Back
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Drawer>
+  );
 }
 
 function musicNotifyRecipients(): string[] {
@@ -33,46 +309,313 @@ function musicNotifyRecipients(): string[] {
 }
 
 export function MusicHomePage() {
-  const { refresh, tick } = useTick();
-  void tick;
+  const { account, positions, personName } = useAuth();
   const month = musicScheduleService.liveMonthKey();
   const published = musicScheduleService.getPublished(month);
   const drafts = musicScheduleService.listDrafts(month);
+  const office = account
+    ? resolveMinistryBoardOffice(account.personId, SYS, positions)
+    : 'MEMBER';
+  const allowed = new Set(ministryModulesForOffice(SYS, office));
+  const showFinance = allowed.has('finance') || allowed.has('reports');
+
+  const programs = missionService.listPrograms({
+    ownerSystemId: SYS,
+    status: 'ACTIVE',
+  });
+  const events = missionService
+    .listEvents()
+    .filter((e) => e.ownerSystemId === SYS);
+  const projects = missionService
+    .listProjects({ viewerSystemId: SYS })
+    .filter(
+      (p) =>
+        p.ownerSystemId === SYS &&
+        (p.status === 'ACTIVE' || p.status === 'PLANNED'),
+    );
+  const openTasks = missionService
+    .listTasks({ viewerSystemId: SYS, systemId: SYS })
+    .filter((t) => t.status === 'TODO' || t.status === 'IN_PROGRESS');
+
+  const finance = showFinance
+    ? ministryFinanceService.financeReport(SYS)
+    : null;
+  const myPending =
+    account && allowed.has('my-contributions')
+      ? ministryFinanceService.listContributions(SYS, {
+          personId: account.personId,
+          status: 'PENDING',
+        }).length
+      : 0;
+
+  const upcoming = (published?.services ?? [])
+    .filter((s) => s.date >= new Date().toISOString().slice(0, 10))
+    .slice(0, 4);
+
+  const pendingClaims = financeReportPendingCount(SYS);
+  const pendingExpenses = finance
+    ? ministryFinanceService
+        .listExpenses(SYS)
+        .filter((e) => e.status === 'PENDING').length
+    : 0;
+
+  type Need = { id: string; title: string; reason: string; to: string };
+  const needs: Need[] = [];
+  if (!published && allowed.has('schedule')) {
+    needs.push({
+      id: 'sched',
+      title: `${month} choir schedule not published`,
+      reason: 'Build, save a draft, then publish',
+      to: `${BASE}/schedule`,
+    });
+  }
+  if (drafts.length > 0 && allowed.has('schedule-drafts')) {
+    needs.push({
+      id: 'drafts',
+      title: `${drafts.length} draft${drafts.length === 1 ? '' : 's'} waiting`,
+      reason: 'Review and publish one',
+      to: `${BASE}/schedule-drafts`,
+    });
+  }
+  if (pendingClaims > 0 && allowed.has('finance')) {
+    needs.push({
+      id: 'claims',
+      title: `${pendingClaims} claim${pendingClaims === 1 ? '' : 's'} to verify`,
+      reason: 'Pending contributions',
+      to: `${BASE}/finance`,
+    });
+  }
+  if (pendingExpenses > 0 && allowed.has('accounting')) {
+    needs.push({
+      id: 'exp',
+      title: `${pendingExpenses} expense${pendingExpenses === 1 ? '' : 's'} pending`,
+      reason: 'Accounting approval',
+      to: `${BASE}/accounting`,
+    });
+  }
+  if (myPending > 0) {
+    needs.push({
+      id: 'mine',
+      title: `${myPending} of your claims pending`,
+      reason: 'Waiting on treasurer',
+      to: `${BASE}/my-contributions`,
+    });
+  }
+
+  const kicker =
+    office === 'TREASURER'
+      ? 'Treasurer · Music finance'
+      : office === 'PRESIDENT' || office === 'VP'
+        ? 'Music leadership overview'
+        : office === 'SECRETARY'
+          ? 'Secretary · Music records'
+          : 'Music member home';
 
   return (
     <div className="stack">
-      <MinistryHomeCard title="Music System">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Oversight for choirs and worship — service calendar and choir schedule
-          engine. Choir and Worship vaults stay private unless granted.
+      <div className="detail-hero">
+        <p className="hero-kicker">{kicker}</p>
+        <h2 style={{ margin: 0 }}>Music · {personName}</h2>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          At-a-glance status. Open modules from the nav.
         </p>
-        <div className="row">
-          <span className="badge">{MUSIC_UNITS.length} units</span>
-          <span className="badge">
-            {published ? `Published ${month} v${published.version}` : `${month} not published`}
-          </span>
-          <span className="badge">{drafts.length} drafts</span>
+        <div className="overview-strip" style={{ marginTop: '0.85rem' }}>
+          <div className="overview-tile">
+            <div className="label">Choir schedule</div>
+            <div className="value" style={{ fontSize: '0.95rem' }}>
+              {published ? `${month} · v${published.version}` : `${month} · none`}
+            </div>
+          </div>
+          <div className="overview-tile">
+            <div className="label">Drafts</div>
+            <div className="value">{drafts.length}</div>
+          </div>
+          <div className="overview-tile">
+            <div className="label">Units</div>
+            <div className="value">{MUSIC_UNITS.length}</div>
+          </div>
+          {showFinance && finance ? (
+            <div className="overview-tile">
+              <div className="label">Fund balance</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.fundBalance)}
+              </div>
+            </div>
+          ) : (
+            <div className="overview-tile">
+              <div className="label">Active programs</div>
+              <div className="value">{programs.length}</div>
+            </div>
+          )}
         </div>
-      </MinistryHomeCard>
+      </div>
+
+      {needs.length > 0 && (
+        <div className="needs-me">
+          <h3>Needs attention · {needs.length}</h3>
+          <ul className="needs-me-list">
+            {needs.slice(0, 5).map((n) => (
+              <li key={n.id}>
+                <div>
+                  <Link to={n.to}>
+                    <strong>{n.title}</strong>
+                  </Link>
+                  <div className="muted" style={{ fontSize: '0.85rem' }}>
+                    {n.reason}
+                  </div>
+                </div>
+                <Link to={n.to} className="btn ghost">
+                  Open
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="panel">
-        <h3 style={{ marginTop: 0 }}>Work here</h3>
-        <div className="stack" style={{ gap: '0.5rem' }}>
-            <Link to={`${BASE}/schedule`}>Choir schedule workspace</Link>
-          <Link to={`${BASE}/schedule-drafts`}>Drafts</Link>
-          <Link to={`${BASE}/schedule-published`}>Published choir schedule</Link>
-          <Link to={`${BASE}/mission`}>Mission board</Link>
-        </div>
-        <button
-          type="button"
-          className="btn ghost"
-          style={{ marginTop: '0.75rem' }}
-          onClick={refresh}
+        <div
+          className="row"
+          style={{ justifyContent: 'space-between', marginBottom: '0.65rem' }}
         >
-          Refresh
-        </button>
+          <h3 style={{ margin: 0 }}>Mission</h3>
+          {programs[0] ? (
+            <span className="muted" style={{ fontSize: '0.85rem' }}>
+              Lead program · {programs[0].name}
+            </span>
+          ) : null}
+        </div>
+        <div className="overview-strip" style={{ marginTop: 0 }}>
+          <div className="overview-tile">
+            <div className="label">Programs</div>
+            <div className="value">{programs.length}</div>
+          </div>
+          <div className="overview-tile">
+            <div className="label">Events</div>
+            <div className="value">{events.length}</div>
+          </div>
+          <div className="overview-tile">
+            <div className="label">Open tasks</div>
+            <div className="value">{openTasks.length}</div>
+          </div>
+          <div className="overview-tile">
+            <div className="label">Projects</div>
+            <div className="value">{projects.length}</div>
+          </div>
+        </div>
+      </div>
+
+      {showFinance && finance && (
+        <div className="panel">
+          <h3 style={{ marginTop: 0, marginBottom: '0.65rem' }}>Finance</h3>
+          <div className="overview-strip" style={{ marginTop: 0 }}>
+            <div className="overview-tile">
+              <div className="label">Confirmed</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.contributionsConfirmed)}
+              </div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Claims pending</div>
+              <div className="value">{pendingClaims}</div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Expenses approved</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.expensesApproved)}
+              </div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Expenses pending</div>
+              <div className="value">{pendingExpenses}</div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Assets</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.assets)}
+              </div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Liabilities</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.liabilities)}
+              </div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Net assets</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.netAssets)}
+              </div>
+            </div>
+            <div className="overview-tile">
+              <div className="label">Fund</div>
+              <div className="value" style={{ fontSize: '0.95rem' }}>
+                {financeService.formatAmount(finance.fundBalance)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="panel">
+        <div
+          className="row"
+          style={{ justifyContent: 'space-between', marginBottom: '0.65rem' }}
+        >
+          <h3 style={{ margin: 0 }}>Next on choir schedule</h3>
+          <span className="badge">
+            {published ? `Published v${published.version}` : 'Not published'}
+          </span>
+        </div>
+        {!published ? (
+          <p className="muted" style={{ marginBottom: 0 }}>
+            No live schedule for {month}
+            {drafts.length
+              ? ` · ${drafts.length} draft${drafts.length === 1 ? '' : 's'} ready to review`
+              : ''}
+            .
+          </p>
+        ) : upcoming.length === 0 ? (
+          <p className="muted" style={{ marginBottom: 0 }}>
+            No upcoming services left in this period.
+          </p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Service</th>
+                <th>Scheduled</th>
+              </tr>
+            </thead>
+            <tbody>
+              {upcoming.map((s) => {
+                const units = musicScheduleService.assignmentsForService(
+                  published.assignments,
+                  s.id,
+                );
+                return (
+                  <tr key={s.id}>
+                    <td>{s.date}</td>
+                    <td>{MUSIC_SERVICE_LABELS[s.kind]}</td>
+                    <td>
+                      {units.map(musicUnitName).join(' · ') || '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
+}
+
+function financeReportPendingCount(systemId: typeof SYS): number {
+  return ministryFinanceService.listContributions(systemId, {
+    status: 'PENDING',
+  }).length;
 }
 
 export function MusicMissionPage() {
@@ -90,6 +633,7 @@ export function MusicScheduleWorkspacePage() {
   );
   const [horizon, setHorizon] = useState<MusicHorizon>('MONTH');
   const [msg, setMsg] = useState('');
+  const [edit, setEdit] = useState<ScheduleEditState | null>(null);
   const canvas = useMemo(
     () => musicScheduleService.getCanvas(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,15 +668,32 @@ export function MusicScheduleWorkspacePage() {
     refresh();
   }
 
+  function applyEditResult(
+    r: { ok: boolean; reason?: string; warnings?: string[] },
+    okMsg: string,
+  ) {
+    if (!r.ok) {
+      setMsg(r.reason ?? 'Edit failed');
+      return;
+    }
+    const notes = r.warnings?.length ? ` · ${r.warnings.length} note(s)` : '';
+    setMsg(`${okMsg}${notes}`);
+    setEdit(null);
+    refresh();
+  }
+
   const services = canvas?.services ?? [];
   const assignments = canvas?.assignments ?? [];
+  const editUnits = edit
+    ? musicScheduleService.assignmentsForService(assignments, edit.serviceId)
+    : [];
 
   return (
     <div className="stack">
       <div className="panel">
         <PageHead
           title="Choir schedule workspace"
-          subtitle="Build calendar → generate choir schedule → save draft. Publish from Drafts."
+          subtitle="Build calendar → generate choir schedule → edit manually → save draft. Identical schedules cannot be saved twice — rebuild or change a choir first. Publish from Drafts."
           actions={
             <Link className="btn secondary" to={`${BASE}/schedule-drafts`}>
               Drafts
@@ -214,6 +775,7 @@ export function MusicScheduleWorkspacePage() {
                 <th>Date</th>
                 <th>Service</th>
                 <th>Scheduled</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -227,9 +789,48 @@ export function MusicScheduleWorkspacePage() {
                     <td>{s.date}</td>
                     <td>{MUSIC_SERVICE_LABELS[s.kind]}</td>
                     <td>
-                      {units.length
-                        ? musicScheduleService.formatAssignmentLine(units)
-                        : '—'}
+                      {units.length ? (
+                        <div
+                          className="row"
+                          style={{ flexWrap: 'wrap', gap: '0.35rem' }}
+                        >
+                          {units.map((uid) => (
+                            <button
+                              key={uid}
+                              type="button"
+                              className="filter-chip"
+                              title="Remove or replace this choir"
+                              onClick={() =>
+                                setEdit({
+                                  serviceId: s.id,
+                                  date: s.date,
+                                  kind: s.kind,
+                                  focusUnitId: uid,
+                                })
+                              }
+                            >
+                              {musicUnitName(uid)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() =>
+                          setEdit({
+                            serviceId: s.id,
+                            date: s.date,
+                            kind: s.kind,
+                          })
+                        }
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 );
@@ -238,6 +839,34 @@ export function MusicScheduleWorkspacePage() {
           </table>
         )}
       </div>
+
+      <ScheduleEditDrawer
+        open={!!edit}
+        target={edit}
+        scheduled={editUnits}
+        onClose={() => setEdit(null)}
+        onRemove={(unitId) => {
+          if (!edit) return;
+          applyEditResult(
+            musicScheduleService.removeCanvasUnit(edit.serviceId, unitId),
+            `Removed ${musicUnitName(unitId)}`,
+          );
+        }}
+        onReplace={(from, to) => {
+          if (!edit) return;
+          applyEditResult(
+            musicScheduleService.replaceCanvasUnit(edit.serviceId, from, to),
+            `Replaced ${musicUnitName(from)} with ${musicUnitName(to)}`,
+          );
+        }}
+        onAdd={(unitId) => {
+          if (!edit) return;
+          applyEditResult(
+            musicScheduleService.addCanvasUnit(edit.serviceId, unitId),
+            `Added ${musicUnitName(unitId)}`,
+          );
+        }}
+      />
     </div>
   );
 }
@@ -247,6 +876,9 @@ export function MusicScheduleDraftsPage() {
   const canManage = missionService.canManageBoard(positions, SYS);
   const { refresh, tick } = useTick();
   const [msg, setMsg] = useState('');
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
   const drafts = useMemo(
     () => musicScheduleService.listDrafts(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -267,6 +899,8 @@ export function MusicScheduleDraftsPage() {
         ? `Published choir schedule ${r.schedule?.periodKey} v${r.schedule?.version}`
         : r.reason ?? 'Publish failed',
     );
+    setViewId(null);
+    setCompareOpen(false);
     refresh();
   }
 
@@ -274,15 +908,30 @@ export function MusicScheduleDraftsPage() {
     if (!canManage) return;
     musicScheduleService.deleteDraft(id);
     setMsg('Draft deleted');
+    if (viewId === id) setViewId(null);
+    setCompareIds((ids) => ids.filter((x) => x !== id));
     refresh();
   }
+
+  function toggleCompare(id: string) {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  }
+
+  const viewing = viewId ? musicScheduleService.getDraft(viewId) : null;
+  const compareDrafts = compareIds
+    .map((id) => musicScheduleService.getDraft(id))
+    .filter(Boolean);
 
   return (
     <div className="stack">
       <div className="panel">
         <PageHead
           title="Schedule drafts"
-          subtitle="Drafts cannot be edited — delete or publish. Publishing deletes other drafts for that period."
+          subtitle="Open drafts to review, compare two side by side, then publish one. Publishing clears other drafts for that period."
           actions={
             <Link className="btn secondary" to={`${BASE}/schedule`}>
               Workspace
@@ -290,6 +939,28 @@ export function MusicScheduleDraftsPage() {
           }
         />
         {msg && <p className="badge">{msg}</p>}
+        {compareIds.length > 0 && (
+          <div className="row" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
+            <span className="muted">
+              Compare selected: {compareIds.length}/2
+            </span>
+            <button
+              type="button"
+              className="btn"
+              disabled={compareIds.length !== 2}
+              onClick={() => setCompareOpen(true)}
+            >
+              Compare drafts
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setCompareIds([])}
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
       </div>
       <div className="panel">
         {drafts.length === 0 ? (
@@ -298,16 +969,27 @@ export function MusicScheduleDraftsPage() {
           <table className="table">
             <thead>
               <tr>
+                <th style={{ width: '2.5rem' }} title="Select for compare">
+                  Cmp
+                </th>
                 <th>Label</th>
                 <th>Period</th>
                 <th>Status</th>
                 <th>Created</th>
-                <th />
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {drafts.map((d) => (
                 <tr key={d.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={compareIds.includes(d.id)}
+                      onChange={() => toggleCompare(d.id)}
+                      aria-label={`Select ${d.label} for compare`}
+                    />
+                  </td>
                   <td>
                     <strong>{d.label}</strong>
                     <div className="muted" style={{ fontSize: '0.85rem' }}>
@@ -321,24 +1003,33 @@ export function MusicScheduleDraftsPage() {
                   </td>
                   <td>{new Date(d.createdAt).toLocaleString()}</td>
                   <td>
-                    {canManage && (
-                      <div className="row">
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => onPublish(d.id)}
-                        >
-                          Publish
-                        </button>
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          onClick={() => onDelete(d.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
+                    <div className="row" style={{ flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        onClick={() => setViewId(d.id)}
+                      >
+                        View
+                      </button>
+                      {canManage && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => onPublish(d.id)}
+                          >
+                            Publish
+                          </button>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => onDelete(d.id)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -346,7 +1037,128 @@ export function MusicScheduleDraftsPage() {
           </table>
         )}
       </div>
+
+      <Drawer
+        open={!!viewing}
+        title={viewing ? `Draft · ${viewing.label}` : 'Draft'}
+        onClose={() => setViewId(null)}
+        wide
+      >
+        {viewing && (
+          <div className="stack" style={{ gap: '0.75rem' }}>
+            <p className="muted" style={{ margin: 0 }}>
+              {viewing.periodKey} · {viewing.services.length} services ·{' '}
+              {viewing.assignments.length} assignments · created{' '}
+              {new Date(viewing.createdAt).toLocaleString()}
+            </p>
+            {viewing.warnings?.length ? (
+              <ul className="muted" style={{ margin: 0 }}>
+                {viewing.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+            <DraftScheduleTable draft={viewing} />
+            {canManage && (
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => onPublish(viewing.id)}
+                >
+                  Publish this draft
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => onDelete(viewing.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Drawer>
+
+      <Drawer
+        open={compareOpen && compareDrafts.length === 2}
+        title="Compare drafts"
+        onClose={() => setCompareOpen(false)}
+        wide
+      >
+        {compareDrafts.length === 2 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '1rem',
+              alignItems: 'start',
+            }}
+          >
+            {compareDrafts.map((d) =>
+              d ? (
+                <div key={d.id} className="stack" style={{ gap: '0.5rem' }}>
+                  <div>
+                    <strong>{d.label}</strong>
+                    <div className="muted" style={{ fontSize: '0.85rem' }}>
+                      {d.periodKey} · {new Date(d.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <DraftScheduleTable draft={d} compact />
+                  {canManage && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => onPublish(d.id)}
+                    >
+                      Publish this one
+                    </button>
+                  )}
+                </div>
+              ) : null,
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
+  );
+}
+
+function DraftScheduleTable({
+  draft,
+  compact,
+}: {
+  draft: MusicScheduleDraft;
+  compact?: boolean;
+}) {
+  return (
+    <table className="table" style={compact ? { fontSize: '0.85rem' } : undefined}>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Service</th>
+          <th>Scheduled</th>
+        </tr>
+      </thead>
+      <tbody>
+        {draft.services.map((s) => {
+          const units = musicScheduleService.assignmentsForService(
+            draft.assignments,
+            s.id,
+          );
+          return (
+            <tr key={s.id}>
+              <td>{s.date}</td>
+              <td>{MUSIC_SERVICE_LABELS[s.kind]}</td>
+              <td>
+                {units.length ? units.map(musicUnitName).join(' · ') : '—'}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -358,41 +1170,35 @@ export function MusicSchedulePublishedPage() {
     musicScheduleService.liveMonthKey(),
   );
   const [msg, setMsg] = useState('');
+  const [edit, setEdit] = useState<ScheduleEditState | null>(null);
   const published = useMemo(
     () => musicScheduleService.getPublished(periodKey),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [periodKey, tick],
   );
 
-  function moveUnit(serviceId: string, fromIdx: number, dir: -1 | 1) {
-    if (!published || !canManage || !account) return;
-    const units = musicScheduleService.assignmentsForService(
-      published.assignments,
-      serviceId,
-    );
-    const to = fromIdx + dir;
-    if (to < 0 || to >= units.length) return;
-    const next = [...units];
-    [next[fromIdx], next[to]] = [next[to], next[fromIdx]];
-    const rest = published.assignments.filter((a) => a.serviceId !== serviceId);
-    const rebuilt = [
-      ...rest,
-      ...next.map((unitId) => ({
-        id: `masg-${Math.random().toString(36).slice(2, 8)}`,
-        serviceId,
-        unitId,
-        source: 'MANUAL' as const,
-      })),
-    ];
-    const r = musicScheduleService.updatePublished(
-      periodKey,
-      account.personId,
-      rebuilt,
-      musicNotifyRecipients(),
-    );
-    setMsg(r.ok ? `Updated v${r.schedule?.version}` : r.reason ?? 'Update failed');
+  function applyEditResult(
+    r: { ok: boolean; reason?: string; warnings?: string[]; schedule?: { version: number } },
+    okMsg: string,
+  ) {
+    if (!r.ok) {
+      setMsg(r.reason ?? 'Edit failed');
+      return;
+    }
+    const ver = r.schedule ? ` · v${r.schedule.version}` : '';
+    const notes = r.warnings?.length ? ` · ${r.warnings.length} note(s)` : '';
+    setMsg(`${okMsg}${ver}${notes}`);
+    setEdit(null);
     refresh();
   }
+
+  const editUnits =
+    edit && published
+      ? musicScheduleService.assignmentsForService(
+          published.assignments,
+          edit.serviceId,
+        )
+      : [];
 
   return (
     <div className="stack">
@@ -437,7 +1243,7 @@ export function MusicSchedulePublishedPage() {
                 <th>Date</th>
                 <th>Service</th>
                 <th>Scheduled</th>
-                {canManage ? <th /> : null}
+                {canManage ? <th>Action</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -451,20 +1257,55 @@ export function MusicSchedulePublishedPage() {
                     <td>{s.date}</td>
                     <td>{MUSIC_SERVICE_LABELS[s.kind]}</td>
                     <td>
-                      {units.map(musicUnitName).join(' · ') || '—'}
+                      {units.length ? (
+                        <div
+                          className="row"
+                          style={{ flexWrap: 'wrap', gap: '0.35rem' }}
+                        >
+                          {units.map((uid) =>
+                            canManage ? (
+                              <button
+                                key={uid}
+                                type="button"
+                                className="filter-chip"
+                                title="Remove or replace this choir"
+                                onClick={() =>
+                                  setEdit({
+                                    serviceId: s.id,
+                                    date: s.date,
+                                    kind: s.kind,
+                                    focusUnitId: uid,
+                                  })
+                                }
+                              >
+                                {musicUnitName(uid)}
+                              </button>
+                            ) : (
+                              <span key={uid} className="filter-chip">
+                                {musicUnitName(uid)}
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     {canManage ? (
                       <td>
-                        {units.length > 1 && (
-                          <button
-                            type="button"
-                            className="btn ghost"
-                            title="Swap first two units"
-                            onClick={() => moveUnit(s.id, 0, 1)}
-                          >
-                            Swap
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() =>
+                            setEdit({
+                              serviceId: s.id,
+                              date: s.date,
+                              kind: s.kind,
+                            })
+                          }
+                        >
+                          Edit
+                        </button>
                       </td>
                     ) : null}
                   </tr>
@@ -473,6 +1314,55 @@ export function MusicSchedulePublishedPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {canManage && account && (
+        <ScheduleEditDrawer
+          open={!!edit}
+          target={edit}
+          scheduled={editUnits}
+          onClose={() => setEdit(null)}
+          onRemove={(unitId) => {
+            if (!edit || !account) return;
+            applyEditResult(
+              musicScheduleService.removePublishedUnit(
+                periodKey,
+                account.personId,
+                edit.serviceId,
+                unitId,
+                musicNotifyRecipients(),
+              ),
+              `Removed ${musicUnitName(unitId)}`,
+            );
+          }}
+          onReplace={(from, to) => {
+            if (!edit || !account) return;
+            applyEditResult(
+              musicScheduleService.replacePublishedUnit(
+                periodKey,
+                account.personId,
+                edit.serviceId,
+                from,
+                to,
+                musicNotifyRecipients(),
+              ),
+              `Replaced ${musicUnitName(from)} with ${musicUnitName(to)}`,
+            );
+          }}
+          onAdd={(unitId) => {
+            if (!edit || !account) return;
+            applyEditResult(
+              musicScheduleService.addPublishedUnit(
+                periodKey,
+                account.personId,
+                edit.serviceId,
+                unitId,
+                musicNotifyRecipients(),
+              ),
+              `Added ${musicUnitName(unitId)}`,
+            );
+          }}
+        />
       )}
     </div>
   );
