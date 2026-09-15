@@ -1,48 +1,100 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { apiHealth, isApiEnabled } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { isChoirOrgUnitId, choirName } from '../domain/choirCatalog';
 import type { SystemId } from '../domain/types';
 import { systemsService, authService } from '../services';
 import { Spinner } from '../components/ui/Spinner';
 import { TextField } from '../components/ui/Field';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 
 const DEMO_HINTS = [
   { user: 'pastor', pass: 'pastor123', note: 'Church Leader · oversight into peer systems' },
   { user: 'assistant', pass: 'assist123', note: 'Pastor (ordained) · lighter oversight' },
   { user: 'catechist', pass: 'catechist123', note: 'Umwarimu · Itorero ops oversight' },
   { user: 'secretary', pass: 'secret123', note: 'Church Secretary (appointment)' },
-  { user: 'patrick', pass: 'member123', note: 'Member · Youth System Admin (config only)' },
+  { user: 'patrick', pass: 'member123', note: 'Member · Protocol / Choir (no System admin)' },
+  { user: 'youthsec', pass: 'youth123', note: 'Youth Secretary · appointed Youth System Admin' },
   { user: 'treasurer', pass: 'treas123', note: 'Church Treasurer · also on API' },
   { user: 'choirtreas', pass: 'choir123', note: 'Choir finance (local seed)' },
   { user: 'worship', pass: 'worship123', note: 'Worship leader' },
   { user: 'worshiptreas', pass: 'worship123', note: 'Worship finance' },
   { user: 'deacon', pass: 'deacon123', note: 'Deacon care coordinator' },
   { user: 'deacontreas', pass: 'deacon123', note: 'Deacon benevolence vault' },
-  { user: 'patrick', pass: 'member123', note: 'Limited own-scope profile' },
   { user: 'music', pass: 'music123', note: 'Music oversight' },
   { user: 'children', pass: 'children123', note: 'Children / Sunday School' },
   { user: 'men', pass: 'men123', note: 'Men ministry' },
 ];
 
+const SCRIPTURES = [
+  {
+    text: 'The Lord is my shepherd; I shall not want.',
+    ref: 'Psalm 23:1',
+  },
+  {
+    text: 'I can do all things through Christ who strengthens me.',
+    ref: 'Philippians 4:13',
+  },
+  {
+    text: 'Trust in the Lord with all your heart, and lean not on your own understanding.',
+    ref: 'Proverbs 3:5',
+  },
+  {
+    text: 'For God so loved the world that He gave His only begotten Son.',
+    ref: 'John 3:16',
+  },
+  {
+    text: 'Be still, and know that I am God.',
+    ref: 'Psalm 46:10',
+  },
+  {
+    text: 'Let us not grow weary in doing good, for in due season we shall reap.',
+    ref: 'Galatians 6:9',
+  },
+  {
+    text: 'The Lord your God is with you wherever you go.',
+    ref: 'Joshua 1:9',
+  },
+  {
+    text: 'Love one another as I have loved you.',
+    ref: 'John 13:34',
+  },
+  {
+    text: 'This is the day that the Lord has made; let us rejoice and be glad in it.',
+    ref: 'Psalm 118:24',
+  },
+  {
+    text: 'Commit your work to the Lord, and your plans will be established.',
+    ref: 'Proverbs 16:3',
+  },
+  {
+    text: 'Serve the Lord with gladness; come before His presence with singing.',
+    ref: 'Psalm 100:2',
+  },
+  {
+    text: 'And let the peace of God rule in your hearts.',
+    ref: 'Colossians 3:15',
+  },
+];
+
+function pickScripture() {
+  return SCRIPTURES[Math.floor(Math.random() * SCRIPTURES.length)]!;
+}
+
 export function LoginPage() {
-  const { account, login, apiEnabled, setActiveChoir } = useAuth();
+  const { account, login, setActiveChoir } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [apiStatus, setApiStatus] = useState<'checking' | 'up' | 'down' | 'off'>(
-    apiEnabled ? 'checking' : 'off',
-  );
-
   const [showDemos, setShowDemos] = useState(false);
+  const scripture = useMemo(() => pickScripture(), []);
 
   const targetSystemId = (params.get('system') as SystemId | null) ?? 'sys-main';
   const choirOrgUnitId = params.get('choir');
-  /** Demo accounts + API chrome: DEV builds or `?demo=1`. */
+  /** Demo accounts: DEV builds or `?demo=1`. */
   const showOpsChrome =
     import.meta.env.DEV || params.get('demo') === '1';
   const targetSystem = useMemo(
@@ -52,23 +104,12 @@ export function LoginPage() {
     [targetSystemId],
   );
 
-  useEffect(() => {
-    if (!showOpsChrome) {
-      setApiStatus('off');
-      return;
-    }
-    if (!isApiEnabled()) {
-      setApiStatus('off');
-      return;
-    }
-    let cancelled = false;
-    apiHealth().then((h) => {
-      if (!cancelled) setApiStatus(h?.status === 'ok' ? 'up' : 'down');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [showOpsChrome]);
+  const systemTitle =
+    choirOrgUnitId && isChoirOrgUnitId(choirOrgUnitId)
+      ? choirName(choirOrgUnitId)
+      : targetSystem?.kind === 'MAIN'
+        ? 'ADEPR Kacyiru'
+        : (targetSystem?.shortName ?? targetSystem?.name ?? 'ADEPR Kacyiru');
 
   useEffect(() => {
     if (
@@ -125,15 +166,12 @@ export function LoginPage() {
   return (
     <div className="login-page login-split">
       <div className="login-form-pane">
+        <ThemeToggle className="theme-toggle login-theme-toggle" />
         <div className="login-card stack">
           <div className="login-brand">
             <img src="/brand/adepr-logo.png" alt="ADEPR" width={76} height={76} />
             <div>
-              <h1>
-                {choirOrgUnitId && isChoirOrgUnitId(choirOrgUnitId)
-                  ? choirName(choirOrgUnitId)
-                  : 'Welcome Back'}
-              </h1>
+              <h1>{systemTitle}</h1>
               <p className="muted" style={{ margin: 0 }}>
                 {targetSystem?.kind === 'MAIN'
                   ? 'Sign in to continue to your account'
@@ -141,26 +179,8 @@ export function LoginPage() {
                     ? `Direct login to this choir. Same account as Main Church.`
                     : `Direct login to ${targetSystem?.name}. Same account as Main Church.`}
               </p>
-              <p className="login-motto">Faith · Knowledge · Service</p>
             </div>
           </div>
-
-          {showOpsChrome && apiStatus !== 'off' && (
-            <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
-              Auth:{' '}
-              {apiStatus === 'checking' && 'checking API…'}
-              {apiStatus === 'up' && (
-                <>
-                  API connected · seed fallback for other demo users
-                </>
-              )}
-              {apiStatus === 'down' && (
-                <>
-                  API unreachable — using in-memory seed login
-                </>
-              )}
-            </p>
-          )}
 
           <form className="stack" onSubmit={onSubmit}>
             <TextField
@@ -236,18 +256,15 @@ export function LoginPage() {
       <aside className="login-hero-pane" aria-label="Welcome">
         <img
           className="login-hero-media"
-          src="/brand/church-building.png"
+          src="/brand/church-building.png?v=2"
           alt="ADEPR Kacyiru church building"
+          decoding="async"
+          fetchPriority="high"
         />
         <div className="login-hero-shade" aria-hidden />
         <div className="login-hero-copy">
-          <p className="login-hero-brand">
-            Building a brighter future through faith and service.
-          </p>
-          <p className="login-hero-line">
-            Shared identity for Main Church and every ministry system at ADEPR
-            Kacyiru.
-          </p>
+          <p className="login-hero-brand">“{scripture.text}”</p>
+          <p className="login-hero-line">{scripture.ref}</p>
         </div>
         <div className="login-hero-wave" aria-hidden />
       </aside>
