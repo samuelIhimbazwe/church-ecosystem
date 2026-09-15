@@ -12,7 +12,6 @@ import {
   CHOIR_TEAMS,
   pushChoirContribEvent,
   pushChoirContribNotification,
-  pushChoirContribution,
   pushChoirDrive,
   pushChoirFamilyRail,
   pushChoirFollowUp,
@@ -35,7 +34,6 @@ import {
 import type {
   ChoirContribution,
   ChoirContributionDrive,
-  ChoirContributionStatus,
   ChoirOffice,
   ChoirPaymentMethod,
 } from '../domain/types';
