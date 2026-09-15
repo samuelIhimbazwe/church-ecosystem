@@ -25,6 +25,7 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
       { resource: 'CHOIR_ROSTER', action: 'MANAGE' },
       { resource: 'MEMBERSHIP', action: 'VIEW' },
       { resource: 'MEMBERSHIP', action: 'MANAGE' },
+      { resource: 'CHOIR_FINANCE', action: 'VIEW' },
       { resource: 'PROGRAM', action: 'VIEW' },
       { resource: 'EVENT', action: 'VIEW' },
       { resource: 'TASK', action: 'VIEW' },
@@ -46,6 +47,7 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
       { resource: 'CHOIR_ROSTER', action: 'MANAGE' },
       { resource: 'MEMBERSHIP', action: 'VIEW' },
       { resource: 'CHOIR_FINANCE', action: 'VIEW' },
+      { resource: 'CHOIR_FINANCE', action: 'MANAGE' },
       { resource: 'CHOIR_REPERTOIRE', action: 'VIEW' },
       { resource: 'PROGRAM', action: 'VIEW' },
       { resource: 'EVENT', action: 'VIEW' },
@@ -90,6 +92,7 @@ export const CHOIR_OFFICE_GRANTS: Record<ChoirOffice, readonly ChoirGrantSpec[]>
     FAMILY_LEADER: [
       { resource: 'CHOIR_ROSTER', action: 'VIEW' },
       { resource: 'CHOIR_FINANCE', action: 'VIEW' },
+      { resource: 'CHOIR_FINANCE', action: 'MANAGE' },
       { resource: 'CHOIR_REPERTOIRE', action: 'VIEW' },
     ],
     MEMBER: [
