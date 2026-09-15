@@ -8,6 +8,10 @@ import {
   peopleService,
   systemsService,
 } from '../services';
+import {
+  SelectField,
+  TextField,
+} from '../components/ui/Field';
 
 type BrowseCategory = 'MINISTRY' | 'TEAM' | 'ORGANISATION';
 
@@ -169,83 +173,77 @@ export function OrganizationPage() {
             Offices are not listed here. Edit an existing unit from its detail
             page.
           </p>
-          <div className="field">
-            <label htmlFor="oname">Name</label>
-            <input
-              id="oname"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
+          <TextField
+            label="Name"
+            name="oname"
+            id="oname"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="otype">Category</label>
-              <select
-                id="otype"
-                value={type}
-                onChange={(e) => setType(e.target.value as BrowseCategory)}
-              >
-                <option value="MINISTRY">Ministry</option>
-                <option value="TEAM">Team</option>
-                <option value="ORGANISATION">Organisation</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="oparent">Parent</label>
-              <select
-                id="oparent"
-                value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
-              >
-                <option value="">— none —</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectField
+              label="Category"
+              name="otype"
+              id="otype"
+              value={type}
+              onChange={(e) => setType(e.target.value as BrowseCategory)}
+            >
+              <option value="MINISTRY">Ministry</option>
+              <option value="TEAM">Team</option>
+              <option value="ORGANISATION">Organisation</option>
+            </SelectField>
+            <SelectField
+              label="Parent"
+              name="oparent"
+              id="oparent"
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+            >
+              <option value="">— none —</option>
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </SelectField>
           </div>
-          <div className="field">
-            <label htmlFor="odesc">Description</label>
-            <input
-              id="odesc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+          <TextField
+            label="Description"
+            name="odesc"
+            id="odesc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
           <div className="grid-2">
-            <div className="field">
-              <label htmlFor="olead">Leader</label>
-              <select
-                id="olead"
-                value={leaderPersonId}
-                onChange={(e) => setLeaderPersonId(e.target.value)}
-              >
-                <option value="">— none —</option>
-                {peopleService.list().map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.fullName}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="osys">Linked system</label>
-              <select
-                id="osys"
-                value={systemId}
-                onChange={(e) => setSystemId(e.target.value)}
-              >
-                <option value="">— none —</option>
-                {systemsService.list().map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.shortName} ({s.status})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectField
+              label="Leader"
+              name="olead"
+              id="olead"
+              value={leaderPersonId}
+              onChange={(e) => setLeaderPersonId(e.target.value)}
+            >
+              <option value="">— none —</option>
+              {peopleService.list().map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Linked system"
+              name="osys"
+              id="osys"
+              value={systemId}
+              onChange={(e) => setSystemId(e.target.value)}
+            >
+              <option value="">— none —</option>
+              {systemsService.list().map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.shortName} ({s.status})
+                </option>
+              ))}
+            </SelectField>
           </div>
           <div className="row">
             <button type="submit" className="btn">
