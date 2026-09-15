@@ -20,6 +20,8 @@ import type {
   SystemRole,
 } from '../domain/types';
 import {
+  buildParticipationWork,
+  kindLabel,
   orgService,
   participationService,
   peopleService,
@@ -31,6 +33,7 @@ type RegistryFilter = 'all' | 'memberships' | 'positions' | 'assignments';
 
 export function ParticipationPage() {
   const {
+    account,
     personName,
     memberships,
     positions,
@@ -42,6 +45,17 @@ export function ParticipationPage() {
     authorize,
     refreshSession,
   } = useAuth();
+  const personId = account?.personId ?? '';
+  const workBySystem = personId
+    ? buildParticipationWork({
+        personId,
+        roles,
+        positions,
+        tasks,
+        entitlementSystemIds: entitlements.map((e) => e.systemId),
+      })
+    : [];
+  const openWorkCount = workBySystem.reduce((n, s) => n + s.items.length, 0);
   const canManage =
     can('MEMBERSHIP', 'MANAGE') ||
     can('POSITION', 'MANAGE') ||
@@ -186,10 +200,8 @@ export function ParticipationPage() {
             <div className="value">{positions.length}</div>
           </div>
           <div className="overview-tile">
-            <div className="label">Ministries</div>
-            <div className="value">
-              {entitlements.filter((e) => e.systemId !== 'sys-main').length}
-            </div>
+            <div className="label">Open work</div>
+            <div className="value">{openWorkCount || '—'}</div>
           </div>
         </div>
         {msg && <p className="badge">{msg}</p>}
@@ -197,47 +209,73 @@ export function ParticipationPage() {
 
       {tab === 'mine' && (
         <>
-          <div className="why-callout">
-            <strong>Why you can open systems</strong>
-            {entitlements.filter((e) => e.systemId !== 'sys-main').length ===
-            0 ? (
-              <p style={{ margin: '0.4rem 0 0' }} className="muted">
-                No peer systems yet — Main Church only.
-              </p>
-            ) : (
-              <ul style={{ margin: '0.45rem 0 0', paddingLeft: '1.1rem' }}>
-                {entitlements
-                  .filter((e) => e.systemId !== 'sys-main')
-                  .map((e) => (
-                    <li key={e.systemId}>
-                      <strong>
-                        {systemsService.getById(e.systemId)?.shortName ??
-                          systemsService.getById(e.systemId)?.name ??
-                          'Ministry'}
-                      </strong>
-                      <span className="muted"> — {e.reasons.join(' · ')}</span>
-                    </li>
-                  ))}
-              </ul>
-            )}
-            <p className="muted" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
-              <Link to="/access">Probe rights in Access engine →</Link>
-            </p>
-          </div>
-
           <div className="panel">
-            <h3>{personName}</h3>
-            <div className="row">
-              {roles.length === 0 ? (
-                <span className="badge">No standing system role</span>
-              ) : (
-                roles.map((r) => (
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Your work by system</h3>
+                <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+                  {personName} — tasks, approvals, deadlines, and reminders (not
+                  access rights).
+                </p>
+              </div>
+              <div className="row">
+                {roles.map((r) => (
                   <span key={r} className="badge">
                     {roleLabel(r)}
                   </span>
-                ))
-              )}
+                ))}
+              </div>
             </div>
+            {workBySystem.length === 0 ? (
+              <EmptyState
+                title="Nothing waiting on you"
+                detail="When tasks, approvals, or upcoming events need you, they show up here by system."
+              />
+            ) : (
+              <div className="part-work-systems">
+                {workBySystem.map((sys) => (
+                  <section key={sys.systemId} className="part-work-system">
+                    <div className="part-work-system-head">
+                      <h4>
+                        <Link to={sys.basePath || '/'}>{sys.shortName}</Link>
+                      </h4>
+                      <span className="muted">
+                        {sys.items.length} item
+                        {sys.items.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <ul className="inbox-items">
+                      {sys.items.map((item) => (
+                        <li
+                          key={item.id}
+                          className={`inbox-item${item.urgent ? ' unread' : ''}`}
+                        >
+                          <div>
+                            <span className="inbox-kind">
+                              {kindLabel(item.kind)}
+                              {item.dueDate ? ` · ${item.dueDate}` : ''}
+                            </span>
+                            <div>
+                              <Link className="inbox-title" to={item.href}>
+                                {item.title}
+                              </Link>
+                            </div>
+                            {item.detail && (
+                              <p className="inbox-reason muted">{item.detail}</p>
+                            )}
+                          </div>
+                          <div className="inbox-item-actions">
+                            <Link className="btn sm ghost" to={item.href}>
+                              Open
+                            </Link>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="panel">
@@ -278,30 +316,6 @@ export function ParticipationPage() {
                 </tbody>
               </table>
             )}
-          </div>
-          <div className="panel">
-            <h3>Ministries you can enter</h3>
-            {entitlements.length === 0 ? (
-              <EmptyState title="Main Church only" />
-            ) : (
-              <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-                {entitlements.map((e) => (
-                  <li key={e.systemId}>
-                    <strong>
-                      {systemsService.getById(e.systemId)?.shortName ??
-                        e.systemId}
-                    </strong>
-                    <div className="muted">{e.reasons.join(' · ')}</div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {tasks.length > 0 && (
-              <p className="muted">
-                Active tasks: {tasks.map((t) => t.title).join(', ')}
-              </p>
-            )}
-            <Link to="/access">Access engine →</Link>
           </div>
         </>
       )}
