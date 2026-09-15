@@ -91,23 +91,19 @@ export function canApproveScopeLevel(
   roles: SystemRole[],
   positions: Position[],
 ): boolean {
+  // Church-level bind = Church Leader only (Pastor/Catechist prepare; Leader decides).
   if (level.kind === 'CHURCH') {
-    return (
-      roles.includes('CHURCH_LEADER') || roles.includes('ASSISTANT_PASTOR')
-    );
+    return roles.includes('CHURCH_LEADER');
   }
   if (level.systemId) {
     if (isMissionLeader(positions, level.systemId)) return true;
     const sys = SYSTEMS.find((s) => s.id === level.systemId);
     if (sys && sys.status !== 'ACTIVE') {
-      return (
-        roles.includes('CHURCH_LEADER') || roles.includes('ASSISTANT_PASTOR')
-      );
+      return roles.includes('CHURCH_LEADER');
     }
+    return false;
   }
-  return (
-    roles.includes('CHURCH_LEADER') || roles.includes('ASSISTANT_PASTOR')
-  );
+  return roles.includes('CHURCH_LEADER');
 }
 
 /** @deprecated alias — Events keep existing names */
