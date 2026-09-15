@@ -11,6 +11,7 @@ import {
   CHOIR_DONATIONS,
   CHOIR_DUTIES,
   CHOIR_EXPENSES,
+  CHOIR_FAMILY_RAILS,
   CHOIR_FOLLOW_UPS,
   CHOIR_INCOME,
   CHOIR_LIABILITIES,
@@ -62,6 +63,7 @@ import {
   verifyClaimPreferApi,
 } from './contributionApiBridge';
 import { financeService } from './financeService';
+import { choirContributionOps } from './choirContributionOps';
 
 const SECTION_ORDER: ChoirVoiceSection[] = [
   'SOPRANO',
@@ -365,15 +367,26 @@ export const choirService = {
     }
     const id = nid('ccon');
     const now = new Date().toISOString();
+    const teamId = this.teamIdForPerson(input.personId);
+    const familyRail =
+      teamId &&
+      CHOIR_FAMILY_RAILS.find(
+        (r) =>
+          r.teamId === teamId &&
+          r.active &&
+          r.kind === (input.paymentMethod === 'BANK' ? 'BANK' : 'MOMO') &&
+          inActiveChoir(r),
+      );
     pushChoirContribution({
       id,
       orgUnitId,
       personId: input.personId,
-      teamId: this.teamIdForPerson(input.personId),
+      teamId,
       typeId: input.typeId,
       driveId: input.driveId,
       amount: Math.round(input.amount),
       paymentMethod: input.paymentMethod,
+      familyRailId: familyRail?.id,
       occurredOn: input.occurredOn,
       status: 'PENDING',
       submittedAt: now,
@@ -382,6 +395,12 @@ export const choirService = {
       receivedByPersonId: input.receivedByPersonId,
       receivedAt: input.receivedByPersonId ? now : undefined,
     });
+    try {
+      const created = CHOIR_CONTRIBUTIONS.find((x) => x.id === id);
+      if (created) choirContributionOps.recordClaimSubmitted(created);
+    } catch {
+      /* ignore */
+    }
     return { ok: true, id };
   },
 
