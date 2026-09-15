@@ -75,7 +75,6 @@ function push(
 }
 
 function hasConcreteTieToSystem(
-  personId: string,
   systemId: SystemId,
   positions: Position[],
 ) {
@@ -145,7 +144,7 @@ export function buildParticipationWork(input: {
       const tied =
         e.createdByPersonId === personId ||
         (e.collaboratorPersonIds ?? []).includes(personId) ||
-        hasConcreteTieToSystem(personId, systemId, positions) ||
+        hasConcreteTieToSystem(systemId, positions) ||
         (systemId === 'sys-main' && isChurchLeader(roles));
       if (!tied) continue;
       const day = e.startsAt.slice(0, 10);
