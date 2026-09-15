@@ -175,8 +175,17 @@ html[data-theme='dark'] .topbar {
   }
 }
 
-* {
-  box-sizing: border-box;
+img,
+video,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+img.brand-logo,
+.ministry-top-brand img,
+.login-brand img {
+  height: auto;
 }
 
 html,
@@ -304,6 +313,32 @@ textarea {
   padding: 0.4rem 0.55rem 0.65rem;
   position: relative;
   z-index: 1;
+}
+
+.nav-toggle,
+.nav-drawer-close,
+.nav-backdrop {
+  display: none;
+}
+
+.topbar-leading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.topbar-titles {
+  min-width: 0;
+}
+
+.topbar-subtitle {
+  margin: 0.1rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  max-width: 42rem;
 }
 
 .brand-logo {
@@ -2886,8 +2921,127 @@ tr.soft-critical-row td:first-child {
     grid-template-columns: 1fr;
   }
 
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-top: 0.15rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .nav-toggle:hover {
+    border-color: var(--line-strong);
+    background: var(--accent-soft);
+    color: var(--accent-on-soft);
+  }
+
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    border: none;
+    background: color-mix(in srgb, var(--ink) 40%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .app-shell.nav-open .nav-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .sidebar {
-    padding-bottom: 0.75rem;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(18.5rem, 88vw);
+    z-index: 100;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: none;
+    max-height: 100dvh;
+    padding-top: max(0.95rem, env(safe-area-inset-top));
+    padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+
+  .app-shell.nav-open .sidebar {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .nav-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--sidebar-text);
+    cursor: pointer;
+  }
+
+  .nav-drawer-close:hover {
+    background: color-mix(in srgb, #fff 55%, transparent);
+    color: var(--sidebar-active);
+  }
+
+  .brand {
+    padding-right: 0.25rem;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    padding: 0.65rem max(0.85rem, env(safe-area-inset-right)) 0.65rem
+      max(0.85rem, env(safe-area-inset-left));
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .topbar-account,
+  .topbar-kbd,
+  .topbar-search-label,
+  .topbar-inbox-label {
+    display: none;
+  }
+
+  .topbar-search,
+  .topbar-inbox {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .topbar h1 {
+    font-size: 1.05rem;
+  }
+
+  .topbar-subtitle {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .content {
+    padding: 0.85rem max(0.85rem, env(safe-area-inset-right)) 2rem
+      max(0.85rem, env(safe-area-inset-left));
   }
 
   .grid-2,
@@ -2898,6 +3052,151 @@ tr.soft-critical-row td:first-child {
 
   .org-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .table-scroll,
+  .data-table-wrap,
+  .panel:has(> .table),
+  .panel:has(> form .table),
+  .panel:has(.table) {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table {
+    min-width: 32rem;
+  }
+
+  .overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-hero {
+    padding: 1rem;
+  }
+
+  .board-followup-main,
+  .board-agenda-item-head,
+  .part-work-system-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inbox-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .inbox-item-actions {
+    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .ministry-top {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.85rem 1rem;
+  }
+
+  .ministry-top .row {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .ministry-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.25rem;
+    padding: 0.45rem 0.65rem;
+    scrollbar-width: thin;
+  }
+
+  .ministry-nav a {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .ministry-body {
+    padding: 1rem;
+  }
+
+  .cmdk-panel {
+    width: min(34rem, calc(100vw - 1rem));
+  }
+
+  .cmdk-root {
+    padding-top: 8vh;
+  }
+
+  .drawer-panel {
+    width: min(100vw, 24rem);
+  }
+
+  .work-board {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-board-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-head {
+    gap: 0.5rem;
+  }
+
+  .filter-bar,
+  .filter-bar-v2,
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .cal-grid,
+  .cal-weekdays {
+    gap: 0.2rem;
+    font-size: 0.75rem;
+  }
+
+  .cal-cell {
+    min-height: 3.5rem;
+    padding: 0.25rem;
+  }
+
+  .timeline-list li {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .overview-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-week {
+    display: none;
+  }
+
+  .content {
+    padding: 0.75rem 0.7rem 1.75rem;
+  }
+
+  .login-page.login-split .login-card {
+    border-radius: 14px;
+  }
+
+  .people-toolbar,
+  .people-search {
+    max-width: none;
+  }
+
+  .btn:not(.sm):not(.ghost) {
+    min-height: 2.5rem;
   }
 }
 
