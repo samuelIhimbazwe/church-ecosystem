@@ -1,25 +1,18 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { MissionCreateDrawer } from '../components/MissionCreateDrawer';
 import {
   WorkItemViews,
   WorkViewToggle,
   type WorkViewMode,
 } from '../components/WorkItemViews';
-import { Drawer } from '../components/ui/Drawer';
-import {
-  CheckboxField,
-  SelectField,
-  TextAreaField,
-  TextField,
-} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
   ForbiddenState,
   StatusPill,
 } from '../components/ui/StatusPill';
-import type { MissionVisibility, SystemId } from '../domain/types';
 import { projectToWorkItem } from '../domain/workItem';
 import { useProjectsList } from '../hooks/useMissionLists';
 import {
@@ -33,7 +26,7 @@ import {
 export function ProjectsPage() {
   const { can, account, roles, refreshSession } = useAuth();
   const navigate = useNavigate();
-  const { projects, reload } = useProjectsList();
+  const { projects, reload, source } = useProjectsList();
   const refresh = () => {
     reload();
     refreshSession();
@@ -46,32 +39,7 @@ export function ProjectsPage() {
   const canManage = can('PROJECT', 'MANAGE');
   const churchLead = isChurchLeader(roles);
 
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [vis, setVis] = useState<MissionVisibility>('CHURCH');
-  const [leadId, setLeadId] = useState('');
-  const [beyond, setBeyond] = useState(false);
-  const [willSpend, setWillSpend] = useState(false);
-  const [fundId, setFundId] = useState('');
-  const [collabSys, setCollabSys] = useState<SystemId | ''>('');
-  const [programId, setProgramId] = useState('');
-  const [fastTrack, setFastTrack] = useState(false);
-
   const pending = projects.filter((p) => p.status === 'PENDING_APPROVAL');
-  const people = peopleService.list();
-  const systems = systemsService.list().filter((s) => s.id !== 'sys-main');
-  const programs = missionService
-    .listPrograms({ viewerSystemId: 'sys-main' })
-    .filter((p) => !p.parentProgramId);
-  const funds = financeService
-    .listAllFunds()
-    .filter(
-      (f) =>
-        f.status === 'ACTIVE' &&
-        (f.kind === 'PROJECT' ||
-          f.kind === 'GENERAL' ||
-          f.ownerSystemId === 'sys-main'),
-    );
 
   const filtered = useMemo(() => {
     if (statusFilter === 'all') return projects;
@@ -108,48 +76,6 @@ export function ProjectsPage() {
         <ForbiddenState resource="PROJECT" />
       </div>
     );
-  }
-
-  function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage || !name.trim()) return;
-    const r = missionService.createProject({
-      name: name.trim(),
-      description: desc || undefined,
-      ownerSystemId: 'sys-main',
-      visibility: vis,
-      leadPersonId: leadId || undefined,
-      beyondOwnerScope: beyond,
-      willSpend,
-      fundId: willSpend ? fundId || undefined : undefined,
-      collaboratorSystemIds: collabSys ? [collabSys] : undefined,
-      programId: programId || undefined,
-      createdByPersonId: account!.personId,
-      startActive: churchLead && fastTrack && !beyond,
-    });
-    if (!r.ok || !r.project) {
-      setMsg(r.reason ?? 'Create failed');
-      return;
-    }
-    const st = r.project.status;
-    setMsg(
-      st === 'ACTIVE'
-        ? `Created ${r.project.name} — fast-track ACTIVE`
-        : `Draft created: ${r.project.name} — submit when ready${
-            beyond ? ' (beyond-scope approvals after submit)' : ''
-          }`,
-    );
-    setName('');
-    setDesc('');
-    setBeyond(false);
-    setWillSpend(false);
-    setFundId('');
-    setCollabSys('');
-    setProgramId('');
-    setFastTrack(false);
-    setCreateOpen(false);
-    refresh();
-    navigate(`/projects/${r.project.id}`);
   }
 
   return (
@@ -242,116 +168,6 @@ export function ProjectsPage() {
         </div>
       )}
 
-      <Drawer
-        open={createOpen}
-        title="Create project"
-        onClose={() => setCreateOpen(false)}
-        wide
-      >
-        <form className="stack" onSubmit={onCreate}>
-          <TextField
-            label="Name"
-            name="proj-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <SelectField
-            label="Lead (recommended)"
-            name="proj-lead"
-            value={leadId}
-            onChange={(e) => setLeadId(e.target.value)}
-          >
-            <option value="">None yet</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.preferredName ?? p.fullName}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="Collaborating system"
-            name="proj-collab"
-            value={collabSys}
-            onChange={(e) => setCollabSys(e.target.value as SystemId | '')}
-          >
-            <option value="">None</option>
-            {systems.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.shortName}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="Parent programme (optional)"
-            name="proj-program"
-            value={programId}
-            onChange={(e) => setProgramId(e.target.value)}
-          >
-            <option value="">None</option>
-            {programs.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="Visibility"
-            name="proj-vis"
-            value={vis}
-            onChange={(e) => setVis(e.target.value as MissionVisibility)}
-          >
-            <option value="CHURCH">General church</option>
-            <option value="MINISTRY_PRIVATE">Private</option>
-            <option value="SELECTIVE">Selective</option>
-          </SelectField>
-          <TextAreaField
-            label="Description"
-            name="proj-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            rows={3}
-          />
-          <CheckboxField
-            label="Beyond owner scope (needs upper approvals)"
-            checked={beyond}
-            onChange={setBeyond}
-          />
-          {churchLead && !beyond && (
-            <CheckboxField
-              label="Fast-track ACTIVE (Church Leader only)"
-              checked={fastTrack}
-              onChange={setFastTrack}
-            />
-          )}
-          <CheckboxField
-            label="Will spend / has budget (fund required)"
-            checked={willSpend}
-            onChange={setWillSpend}
-          />
-          {willSpend && (
-            <SelectField
-              label="Fund"
-              name="proj-fund"
-              value={fundId}
-              onChange={(e) => setFundId(e.target.value)}
-              required
-              hint="Spending still requires a Treasurer FundAccessGrant on the vault."
-            >
-              <option value="">Select fund…</option>
-              {funds.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name} ({f.code})
-                </option>
-              ))}
-            </SelectField>
-          )}
-          <button type="submit" className="btn">
-            Create project
-          </button>
-        </form>
-      </Drawer>
-
       <div className="panel">
         {view !== 'list' ? (
           <WorkItemViews
@@ -430,6 +246,23 @@ export function ProjectsPage() {
           </table>
         )}
       </div>
+
+      {account && (
+        <MissionCreateDrawer
+          kind="PROJECT"
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          listSource={source}
+          accountPersonId={account.personId}
+          canManage={canManage}
+          isChurchLeader={churchLead}
+          onCreated={(r) => {
+            setMsg(r.message);
+            refresh();
+            navigate(`/projects/${r.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
