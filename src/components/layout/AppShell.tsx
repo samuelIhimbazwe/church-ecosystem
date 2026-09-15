@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import {
   isCatechist,
@@ -151,6 +151,25 @@ export function AppShell({
   } = useAuth();
   const location = useLocation();
   const { unreadCount } = useAttention();
+  const [navOpen, setNavOpen] = useState(false);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setNavOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [navOpen]);
 
   useEffect(() => {
     // Do not steal an active peer/shared session on a transient Back into Main.
@@ -260,12 +279,19 @@ export function AppShell({
   const weekLabel = useMemo(() => weekOfLabel(), []);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${navOpen ? ' nav-open' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
       <CommandPalette />
-      <aside className="sidebar" aria-label="Primary">
+      <button
+        type="button"
+        className="nav-backdrop"
+        aria-label="Close menu"
+        tabIndex={navOpen ? 0 : -1}
+        onClick={() => setNavOpen(false)}
+      />
+      <aside className="sidebar" aria-label="Primary" id="app-sidebar">
         <div className="brand">
           <img
             className="brand-logo"
@@ -278,6 +304,14 @@ export function AppShell({
             ADEPR Kacyiru
             <small>{currentSystem?.shortName ?? 'Main Church'}</small>
           </div>
+          <button
+            type="button"
+            className="nav-drawer-close"
+            aria-label="Close menu"
+            onClick={() => setNavOpen(false)}
+          >
+            <Icon name="close" size={18} />
+          </button>
         </div>
         <nav className="nav" aria-label="Main">
           {navGroups.map((group) => (
@@ -288,6 +322,7 @@ export function AppShell({
                   key={item.to}
                   to={item.to}
                   end={item.end}
+                  onClick={() => setNavOpen(false)}
                   className={({ isActive }) =>
                     [
                       item.secondary ? 'nav-secondary' : '',
@@ -327,10 +362,22 @@ export function AppShell({
       </aside>
       <div className="main">
         <header className="topbar">
-          <div>
-            <p className="topbar-week">Week of {weekLabel}</p>
-            <h1>{title}</h1>
-            <p>{subtitle}</p>
+          <div className="topbar-leading">
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-label="Open menu"
+              aria-expanded={navOpen}
+              aria-controls="app-sidebar"
+              onClick={() => setNavOpen(true)}
+            >
+              <Icon name="menu" size={20} />
+            </button>
+            <div className="topbar-titles">
+              <p className="topbar-week">Week of {weekLabel}</p>
+              <h1>{title}</h1>
+              <p className="topbar-subtitle">{subtitle}</p>
+            </div>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -342,12 +389,12 @@ export function AppShell({
               aria-label="Open search"
             >
               <Icon name="search" size={15} />
-              Search
+              <span className="topbar-search-label">Search</span>
               <kbd className="topbar-kbd">⌘K</kbd>
             </button>
             <NavLink to="/inbox" className="topbar-inbox" aria-label="Inbox">
               <Icon name="inbox" size={15} />
-              Inbox
+              <span className="topbar-inbox-label">Inbox</span>
               {unreadCount > 0 ? (
                 <span className="nav-badge" aria-label={`${unreadCount} unread`}>
                   {unreadCount}
