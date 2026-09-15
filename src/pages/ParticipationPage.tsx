@@ -3,6 +3,11 @@ import { Link } from 'react-router-dom';
 import { membershipTypeLabel, roleLabel } from '../domain/access';
 import { useAuth } from '../auth/AuthContext';
 import { Drawer } from '../components/ui/Drawer';
+import {
+  CheckboxField,
+  SelectField,
+  TextField,
+} from '../components/ui/Field';
 import { FilterBar } from '../components/ui/FilterBar';
 import {
   EmptyState,
@@ -149,12 +154,24 @@ export function ParticipationPage() {
   return (
     <div className="stack">
       <div className="detail-hero">
-        <p className="hero-kicker">Participation</p>
-        <h2 style={{ margin: 0 }}>Where you serve</h2>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          Memberships, positions, and assignments drive system entry (direct or
-          SSO). Temporary task ENTER grants show on Tasks and in Access.
-        </p>
+        <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn sm ${tab === 'mine' ? '' : 'ghost'}`}
+            onClick={() => setTab('mine')}
+          >
+            My participation
+          </button>
+          {canManage && (
+            <button
+              type="button"
+              className={`btn sm ${tab === 'manage' ? '' : 'ghost'}`}
+              onClick={() => setTab('manage')}
+            >
+              Manage registry
+            </button>
+          )}
+        </div>
         <div className="overview-strip" style={{ marginTop: '0.85rem' }}>
           <div className="overview-tile">
             <div className="label">Roles</div>
@@ -169,29 +186,11 @@ export function ParticipationPage() {
             <div className="value">{positions.length}</div>
           </div>
           <div className="overview-tile">
-            <div className="label">Peer systems</div>
+            <div className="label">Ministries</div>
             <div className="value">
               {entitlements.filter((e) => e.systemId !== 'sys-main').length}
             </div>
           </div>
-        </div>
-        <div className="row" style={{ marginTop: '0.85rem' }}>
-          <button
-            type="button"
-            className={`btn ${tab === 'mine' ? '' : 'ghost'}`}
-            onClick={() => setTab('mine')}
-          >
-            My participation
-          </button>
-          {canManage && (
-            <button
-              type="button"
-              className={`btn ${tab === 'manage' ? '' : 'ghost'}`}
-              onClick={() => setTab('manage')}
-            >
-              Manage church registry
-            </button>
-          )}
         </div>
         {msg && <p className="badge">{msg}</p>}
       </div>
@@ -213,7 +212,8 @@ export function ParticipationPage() {
                     <li key={e.systemId}>
                       <strong>
                         {systemsService.getById(e.systemId)?.shortName ??
-                          e.systemId}
+                          systemsService.getById(e.systemId)?.name ??
+                          'Ministry'}
                       </strong>
                       <span className="muted"> — {e.reasons.join(' · ')}</span>
                     </li>
@@ -280,9 +280,9 @@ export function ParticipationPage() {
             )}
           </div>
           <div className="panel">
-            <h3>System entitlements</h3>
+            <h3>Ministries you can enter</h3>
             {entitlements.length === 0 ? (
-              <EmptyState title="No entitlements" />
+              <EmptyState title="Main Church only" />
             ) : (
               <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
                 {entitlements.map((e) => (
@@ -609,80 +609,80 @@ export function ParticipationPage() {
             wide
           >
             <form className="stack" onSubmit={onAddMembership}>
-              <div className="field">
-                <label>Person</label>
-                <select
-                  value={mPerson}
-                  onChange={(e) => setMPerson(e.target.value)}
-                  required
-                >
-                  <option value="">—</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Type</label>
-                <select
-                  value={mType}
-                  onChange={(e) => setMType(e.target.value as MembershipType)}
-                >
-                  {(
-                    [
-                      'CHURCH_MEMBER',
-                      'CHOIR_MEMBER',
-                      'WORSHIP_MEMBER',
-                      'YOUTH_MEMBER',
-                      'PROTOCOL_MEMBER',
-                      'DEACON_MEMBER',
-                      'MEDIA_MEMBER',
-                      'MUSIC_MEMBER',
-                      'MEN_MEMBER',
-                      'WOMEN_MEMBER',
-                      'COUPLES_MEMBER',
-                      'CHILDREN_MEMBER',
-                      'ELDERLY_MEMBER',
-                      'EVANGELISM_MEMBER',
-                      'INTERCESSORS_MEMBER',
-                    ] as MembershipType[]
-                  ).map((t) => (
-                    <option key={t} value={t}>
-                      {membershipTypeLabel(t)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Org unit</label>
-                <select
-                  value={mOrg}
-                  onChange={(e) => setMOrg(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {orgs.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>System (entry)</label>
-                <select
-                  value={mSystem}
-                  onChange={(e) => setMSystem(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {activeSystems.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.shortName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectField
+                label="Person"
+                name="mPerson"
+                id="mPerson"
+                value={mPerson}
+                onChange={(e) => setMPerson(e.target.value)}
+                required
+              >
+                <option value="">—</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.fullName}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Type"
+                name="mType"
+                id="mType"
+                value={mType}
+                onChange={(e) => setMType(e.target.value as MembershipType)}
+              >
+                {(
+                  [
+                    'CHURCH_MEMBER',
+                    'CHOIR_MEMBER',
+                    'WORSHIP_MEMBER',
+                    'YOUTH_MEMBER',
+                    'PROTOCOL_MEMBER',
+                    'DEACON_MEMBER',
+                    'MEDIA_MEMBER',
+                    'MUSIC_MEMBER',
+                    'MEN_MEMBER',
+                    'WOMEN_MEMBER',
+                    'COUPLES_MEMBER',
+                    'CHILDREN_MEMBER',
+                    'ELDERLY_MEMBER',
+                    'EVANGELISM_MEMBER',
+                    'INTERCESSORS_MEMBER',
+                  ] as MembershipType[]
+                ).map((t) => (
+                  <option key={t} value={t}>
+                    {membershipTypeLabel(t)}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Org unit"
+                name="mOrg"
+                id="mOrg"
+                value={mOrg}
+                onChange={(e) => setMOrg(e.target.value)}
+              >
+                <option value="">—</option>
+                {orgs.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="System (entry)"
+                name="mSystem"
+                id="mSystem"
+                value={mSystem}
+                onChange={(e) => setMSystem(e.target.value)}
+              >
+                <option value="">—</option>
+                {activeSystems.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.shortName}
+                  </option>
+                ))}
+              </SelectField>
               <button type="submit" className="btn">
                 Add membership
               </button>
@@ -696,110 +696,109 @@ export function ParticipationPage() {
             wide
           >
             <form className="stack" onSubmit={onAddPosition}>
-              <div className="field">
-                <label>Person</label>
-                <select
-                  value={pPerson}
-                  onChange={(e) => setPPerson(e.target.value)}
-                  required
-                >
-                  <option value="">—</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Title</label>
-                <input
-                  value={pTitle}
-                  onChange={(e) => setPTitle(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Org unit</label>
-                <select
-                  value={pOrg}
-                  onChange={(e) => setPOrg(e.target.value)}
-                  required
-                >
-                  <option value="">—</option>
-                  {orgs.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>System</label>
-                <select
-                  value={pSystem}
-                  onChange={(e) => setPSystem(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {systems.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.shortName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>System role</label>
-                <select
-                  value={pRole}
-                  onChange={(e) =>
-                    setPRole(e.target.value as SystemRole | '')
-                  }
-                >
-                  <option value="">—</option>
-                  {(
-                    [
-                      'CHURCH_LEADER',
-                      'ASSISTANT_PASTOR',
-                      'CHURCH_SECRETARY',
-                      'CHURCH_TREASURER',
-                      'CHOIR_LEADER',
-                      'WORSHIP_LEADER',
-                      'YOUTH_LEADER',
-                      'PROTOCOL_LEADER',
-                      'DEACON_LEADER',
-                      'LIMITED_STAFF',
-                    ] as SystemRole[]
-                  ).map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabel(r)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Mission office</label>
-                <select
-                  value={pOffice}
-                  onChange={(e) =>
-                    setPOffice(e.target.value as MissionLeaderOffice | '')
-                  }
-                >
-                  <option value="">—</option>
-                  <option value="PRESIDENT">President</option>
-                  <option value="VP">VP</option>
-                  <option value="SECRETARY">Secretary</option>
-                  <option value="TREASURER">Treasurer</option>
-                </select>
-              </div>
-              <label className="row" style={{ gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  checked={pAllSystems}
-                  onChange={(e) => setPAllSystems(e.target.checked)}
-                />
-                Grants all systems (governance)
-              </label>
+              <SelectField
+                label="Person"
+                name="pPerson"
+                id="pPerson"
+                value={pPerson}
+                onChange={(e) => setPPerson(e.target.value)}
+                required
+              >
+                <option value="">—</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.fullName}
+                  </option>
+                ))}
+              </SelectField>
+              <TextField
+                label="Title"
+                name="pTitle"
+                id="pTitle"
+                value={pTitle}
+                onChange={(e) => setPTitle(e.target.value)}
+                required
+              />
+              <SelectField
+                label="Org unit"
+                name="pOrg"
+                id="pOrg"
+                value={pOrg}
+                onChange={(e) => setPOrg(e.target.value)}
+                required
+              >
+                <option value="">—</option>
+                {orgs.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="System"
+                name="pSystem"
+                id="pSystem"
+                value={pSystem}
+                onChange={(e) => setPSystem(e.target.value)}
+              >
+                <option value="">—</option>
+                {systems.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.shortName}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="System role"
+                name="pRole"
+                id="pRole"
+                value={pRole}
+                onChange={(e) =>
+                  setPRole(e.target.value as SystemRole | '')
+                }
+              >
+                <option value="">—</option>
+                {(
+                  [
+                    'CHURCH_LEADER',
+                    'PASTOR',
+                    'CATECHIST',
+                    'CHURCH_SECRETARY',
+                    'CHURCH_TREASURER',
+                    'CHOIR_LEADER',
+                    'WORSHIP_LEADER',
+                    'YOUTH_LEADER',
+                    'PROTOCOL_LEADER',
+                    'DEACON_LEADER',
+                    'LIMITED_STAFF',
+                  ] as SystemRole[]
+                ).map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabel(r)}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Mission office"
+                name="pOffice"
+                id="pOffice"
+                value={pOffice}
+                onChange={(e) =>
+                  setPOffice(e.target.value as MissionLeaderOffice | '')
+                }
+              >
+                <option value="">—</option>
+                <option value="PRESIDENT">President</option>
+                <option value="VP">VP</option>
+                <option value="SECRETARY">Secretary</option>
+                <option value="TREASURER">Treasurer</option>
+              </SelectField>
+              <CheckboxField
+                label="Grants all systems (governance)"
+                id="pAllSystems"
+                checked={pAllSystems}
+                onChange={setPAllSystems}
+              />
               <button type="submit" className="btn">
                 Add position
               </button>
@@ -813,59 +812,59 @@ export function ParticipationPage() {
             wide
           >
             <form className="stack" onSubmit={onAddAssignment}>
-              <div className="field">
-                <label>Person</label>
-                <select
-                  value={aPerson}
-                  onChange={(e) => setAPerson(e.target.value)}
-                  required
-                >
-                  <option value="">—</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Title</label>
-                <input
-                  value={aTitle}
-                  onChange={(e) => setATitle(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Context label</label>
-                <input
-                  value={aLabel}
-                  onChange={(e) => setALabel(e.target.value)}
-                  placeholder="e.g. Youth Retreat 2026"
-                />
-              </div>
-              <div className="field">
-                <label>Temporary system access</label>
-                <select
-                  value={aSystem}
-                  onChange={(e) => setASystem(e.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {activeSystems.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.shortName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>End date</label>
-                <input
-                  type="date"
-                  value={aEnd}
-                  onChange={(e) => setAEnd(e.target.value)}
-                />
-              </div>
+              <SelectField
+                label="Person"
+                name="aPerson"
+                id="aPerson"
+                value={aPerson}
+                onChange={(e) => setAPerson(e.target.value)}
+                required
+              >
+                <option value="">—</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.fullName}
+                  </option>
+                ))}
+              </SelectField>
+              <TextField
+                label="Title"
+                name="aTitle"
+                id="aTitle"
+                value={aTitle}
+                onChange={(e) => setATitle(e.target.value)}
+                required
+              />
+              <TextField
+                label="Context label"
+                name="aLabel"
+                id="aLabel"
+                value={aLabel}
+                onChange={(e) => setALabel(e.target.value)}
+                placeholder="e.g. Youth Retreat 2026"
+              />
+              <SelectField
+                label="Temporary system access"
+                name="aSystem"
+                id="aSystem"
+                value={aSystem}
+                onChange={(e) => setASystem(e.target.value)}
+              >
+                <option value="">— none —</option>
+                {activeSystems.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.shortName}
+                  </option>
+                ))}
+              </SelectField>
+              <TextField
+                label="End date"
+                name="aEnd"
+                id="aEnd"
+                type="date"
+                value={aEnd}
+                onChange={(e) => setAEnd(e.target.value)}
+              />
               <button type="submit" className="btn">
                 Add assignment
               </button>
