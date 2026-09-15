@@ -1,18 +1,12 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { MissionCreateDrawer } from '../components/MissionCreateDrawer';
 import {
   WorkItemViews,
   WorkViewToggle,
   type WorkViewMode,
 } from '../components/WorkItemViews';
-import { Drawer } from '../components/ui/Drawer';
-import {
-  CheckboxField,
-  SelectField,
-  TextAreaField,
-  TextField,
-} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
@@ -20,14 +14,15 @@ import {
   StatusPill,
 } from '../components/ui/StatusPill';
 import { useToast } from '../components/ui/Toast';
-import type {
-  MissionVisibility,
-  TaskContextType,
-  WorkTask,
-} from '../domain/types';
+import type { WorkTask } from '../domain/types';
 import { taskToWorkItem } from '../domain/workItem';
 import { useTasksList } from '../hooks/useMissionLists';
-import { peopleService, systemsService, missionService } from '../services';
+import {
+  isChurchLeader,
+  peopleService,
+  systemsService,
+  missionService,
+} from '../services';
 import { writeCompleteTask, writeReopenTask } from '../services/missionWrite';
 
 function taskUrgency(t: WorkTask): 'overdue' | 'critical' | 'grant' | null {
@@ -41,7 +36,7 @@ function taskUrgency(t: WorkTask): 'overdue' | 'critical' | 'grant' | null {
 }
 
 export function TasksPage() {
-  const { account, can, positions, refreshSession } = useAuth();
+  const { account, can, positions, roles, refreshSession } = useAuth();
   const navigate = useNavigate();
   const { push: toast } = useToast();
   const { tasks: apiOrSeedTasks, reload, source } = useTasksList();
@@ -52,15 +47,8 @@ export function TasksPage() {
   const [msg, setMsg] = useState('');
   const canView = can('TASK', 'VIEW');
   const canManage = can('TASK', 'MANAGE');
+  const churchLead = isChurchLeader(roles);
 
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [ownerId, setOwnerId] = useState(account?.personId ?? '');
-  const [helperId, setHelperId] = useState('');
-  const [dueDate, setDueDate] = useState('2026-09-30');
-  const [vis, setVis] = useState<MissionVisibility>('CHURCH');
-  const [ctxType, setCtxType] = useState<TaskContextType>('NONE');
-  const [grantAccess, setGrantAccess] = useState(false);
   const [view, setView] = useState<WorkViewMode>('board');
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -112,7 +100,6 @@ export function TasksPage() {
   const open = all.filter(
     (t) => t.status === 'TODO' || t.status === 'IN_PROGRESS',
   );
-  const people = peopleService.list();
 
   const filtered = useMemo(() => {
     if (statusFilter === 'all') return all;
@@ -158,35 +145,6 @@ export function TasksPage() {
 
   if (!account || !canView) {
     return <ForbiddenState resource="TASK" action="VIEW" />;
-  }
-
-  function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage || !title.trim() || !ownerId) return;
-    const t = missionService.createTask({
-      title: title.trim(),
-      description: desc || undefined,
-      ownerPersonId: ownerId,
-      helperPersonIds: helperId ? [helperId] : undefined,
-      createdByPersonId: account!.personId,
-      systemId: 'sys-main',
-      visibility: vis,
-      contextType: ctxType,
-      dueDate: dueDate || undefined,
-      grantsSystemAccess: grantAccess,
-    });
-    setMsg(
-      grantAccess
-        ? `Created ${t.title} — opens a ministry for the assignee until closed`
-        : `Created ${t.title}`,
-    );
-    setTitle('');
-    setDesc('');
-    setHelperId('');
-    setGrantAccess(false);
-    setCreateOpen(false);
-    refresh();
-    navigate(`/tasks/${t.id}`);
   }
 
   const canQuickDone = (t: WorkTask) =>
@@ -247,95 +205,6 @@ export function TasksPage() {
 
       {msg && <p className="badge">{msg}</p>}
 
-      <Drawer
-        open={createOpen}
-        title="Create task"
-        onClose={() => setCreateOpen(false)}
-        wide
-      >
-        <form className="stack" onSubmit={onCreate}>
-          <TextField
-            label="Title"
-            name="task-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Verb + object"
-            required
-          />
-          <SelectField
-            label="Primary assignee"
-            name="task-owner"
-            value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)}
-            required
-          >
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.preferredName ?? p.fullName}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
-            label="Helper (optional)"
-            name="task-helper"
-            value={helperId}
-            onChange={(e) => setHelperId(e.target.value)}
-          >
-            <option value="">None</option>
-            {people
-              .filter((p) => p.id !== ownerId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.preferredName ?? p.fullName}
-                </option>
-              ))}
-          </SelectField>
-          <TextField
-            label="Due"
-            name="task-due"
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-          <SelectField
-            label="Context"
-            name="task-ctx"
-            value={ctxType}
-            onChange={(e) => setCtxType(e.target.value as TaskContextType)}
-          >
-            <option value="NONE">Standalone</option>
-            <option value="PROGRAM">Program</option>
-            <option value="EVENT">Event</option>
-            <option value="PROJECT">Project</option>
-          </SelectField>
-          <SelectField
-            label="Visibility"
-            name="task-vis"
-            value={vis}
-            onChange={(e) => setVis(e.target.value as MissionVisibility)}
-          >
-            <option value="CHURCH">General church</option>
-            <option value="MINISTRY_PRIVATE">Private</option>
-            <option value="SELECTIVE">Selective</option>
-          </SelectField>
-          <TextAreaField
-            label="Description"
-            name="task-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            rows={3}
-          />
-          <CheckboxField
-            label="While this task is open, let the assignee enter a ministry"
-            checked={grantAccess}
-            onChange={setGrantAccess}
-          />
-          <button type="submit" className="btn">
-            Create task
-          </button>
-        </form>
-      </Drawer>
-
       {filtered.length === 0 ? (
         <div className="list-surface" style={{ padding: '1rem' }}>
           <EmptyState
@@ -385,6 +254,23 @@ export function TasksPage() {
             onDone={markDoneQuick}
           />
         </div>
+      )}
+
+      {account && (
+        <MissionCreateDrawer
+          kind="TASK"
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          listSource={source}
+          accountPersonId={account.personId}
+          canManage={canManage}
+          isChurchLeader={churchLead}
+          onCreated={(r) => {
+            setMsg(r.message);
+            refresh();
+            navigate(`/tasks/${r.id}`);
+          }}
+        />
       )}
     </div>
   );
