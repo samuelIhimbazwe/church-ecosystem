@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import type { BoardFollowUpUpdateKind } from '../domain/types';
 import { TextField } from '../components/ui/Field';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
@@ -11,9 +12,22 @@ import {
 import { peopleService } from '../services';
 
 function personName(id: string) {
-  return peopleService.getById(id)?.preferredName ??
+  return (
+    peopleService.getById(id)?.preferredName ??
     peopleService.getById(id)?.fullName ??
-    id;
+    id
+  );
+}
+
+function updateKindLabel(kind: BoardFollowUpUpdateKind) {
+  switch (kind) {
+    case 'RESULT':
+      return 'Result';
+    case 'BLOCKER':
+      return 'Blocker';
+    default:
+      return 'Progress';
+  }
 }
 
 export function BoardPage() {
@@ -72,32 +86,72 @@ export function BoardPage() {
     <div className="stack">
       {followUps.length > 0 && (
         <div className="panel stack">
-          <h2 style={{ margin: 0 }}>Open follow-ups</h2>
-          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-            {followUps.map(({ meeting, decision }) => (
-              <li key={decision.id}>
-                <strong>{decision.summary}</strong>
-                <span className="muted">
-                  {' '}
-                  · {meeting.title}
-                  {decision.ownerPersonId
-                    ? ` · ${personName(decision.ownerPersonId)}`
-                    : ''}
-                  {decision.dueDate ? ` · due ${decision.dueDate}` : ''}
-                </span>{' '}
-                <button
-                  type="button"
-                  className="btn ghost"
-                  style={{ padding: '0.15rem 0.4rem', fontSize: '0.8rem' }}
-                  onClick={() => {
-                    boardService.completeDecision(meeting.id, decision.id);
-                    refresh();
-                  }}
-                >
-                  Mark done
-                </button>
-              </li>
-            ))}
+          <div>
+            <h2 style={{ margin: 0 }}>Open follow-ups</h2>
+            <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+              Open the report to review progress and results before marking
+              done.
+            </p>
+          </div>
+          <ul className="board-followups">
+            {followUps.map(({ meeting, decision }) => {
+              const updates = [...(decision.progressUpdates ?? [])].sort(
+                (a, b) => b.at.localeCompare(a.at),
+              );
+              const latest = updates[0];
+              const overdue =
+                Boolean(decision.dueDate) &&
+                decision.dueDate! < new Date().toISOString().slice(0, 10);
+              const reportPath = `/board/follow-ups/${decision.id}`;
+              return (
+                <li key={decision.id} className="board-followup">
+                  <div className="board-followup-main">
+                    <div>
+                      <strong>
+                        <Link to={reportPath}>{decision.summary}</Link>
+                      </strong>
+                      <p className="muted" style={{ margin: '0.25rem 0 0' }}>
+                        {meeting.title}
+                        {decision.ownerPersonId
+                          ? ` · ${personName(decision.ownerPersonId)}`
+                          : ''}
+                        {decision.dueDate
+                          ? ` · due ${decision.dueDate}${overdue ? ' (overdue)' : ''}`
+                          : ''}
+                      </p>
+                      {latest ? (
+                        <p className="board-followup-latest">
+                          <span className="badge">
+                            {updateKindLabel(latest.kind)}
+                          </span>{' '}
+                          {latest.note.slice(0, 140)}
+                          {latest.note.length > 140 ? '…' : ''}
+                        </p>
+                      ) : (
+                        <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+                          No progress posted yet.
+                        </p>
+                      )}
+                    </div>
+                    <div className="row" style={{ flexShrink: 0 }}>
+                      <Link className="btn secondary sm" to={reportPath}>
+                        {latest?.kind === 'RESULT'
+                          ? 'View report'
+                          : 'View progress'}
+                      </Link>
+                      {decision.followUpTaskId && (
+                        <Link
+                          className="btn ghost sm"
+                          to={`/tasks/${decision.followUpTaskId}`}
+                        >
+                          Open task
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -139,14 +193,19 @@ export function BoardPage() {
       )}
 
       <div className="stack">
+        <h2 style={{ margin: 0 }}>Meetings</h2>
         {meetings.map((m) => (
           <article key={m.id} className="panel stack">
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ margin: 0 }}>{m.title}</h2>
+                <h3 style={{ margin: 0 }}>
+                  <Link to={`/board/meetings/${m.id}`}>{m.title}</Link>
+                </h3>
                 <p className="muted" style={{ margin: '0.25rem 0 0' }}>
                   {new Date(m.scheduledAt).toLocaleString()} · called by{' '}
-                  {personName(m.calledByPersonId)}
+                  {personName(m.calledByPersonId)} ·{' '}
+                  {boardService.agendaItems(m.id).length} agenda ·{' '}
+                  {m.attendeePersonIds.length} attendees
                 </p>
               </div>
               <StatusPill
@@ -161,116 +220,48 @@ export function BoardPage() {
                 {m.status}
               </StatusPill>
             </div>
-            {boardService.agendaItems(m.id).length > 0 && (
-              <div>
-                <span className="label">Agenda</span>
-                <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
-                  {boardService.agendaItems(m.id).map((a) => (
-                    <li key={a.id}>
-                      {a.text}{' '}
-                      <span className="muted">· {a.state}</span>
-                      {canCall &&
-                        (a.state === 'OPEN' || a.state === 'FROZEN') && (
-                          <span className="row" style={{ display: 'inline-flex', gap: '0.25rem', marginLeft: '0.35rem' }}>
-                            {a.state === 'OPEN' ? (
-                              <button
-                                type="button"
-                                className="btn ghost"
-                                style={{ padding: '0.1rem 0.35rem', fontSize: '0.75rem' }}
-                                onClick={() => {
-                                  const r = boardService.freezeAgendaItem(
-                                    m.id,
-                                    a.id,
-                                    account.personId,
-                                    roles,
-                                  );
-                                  setMsg(r.ok ? 'Frozen for Board' : r.reason ?? '');
-                                  refresh();
-                                }}
-                              >
-                                Freeze
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="btn ghost"
-                              style={{ padding: '0.1rem 0.35rem', fontSize: '0.75rem' }}
-                              onClick={() => {
-                                const r = boardService.decideAgendaItem(
-                                  m.id,
-                                  a.id,
-                                  account.personId,
-                                  roles,
-                                );
-                                setMsg(r.ok ? 'Decided' : r.reason ?? '');
-                                refresh();
-                              }}
-                            >
-                              Decide now
-                            </button>
-                          </span>
-                        )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div>
-              <span className="label">Attendees</span>
-              <p style={{ margin: '0.25rem 0 0' }}>
-                {m.attendeePersonIds.map(personName).join(' · ')}
-              </p>
+            <div className="row">
+              <Link className="btn secondary sm" to={`/board/meetings/${m.id}`}>
+                Open meeting
+              </Link>
+              {canCall && m.status === 'SCHEDULED' && (
+                <>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() => {
+                      boardService.markHeld(m.id);
+                      refresh();
+                    }}
+                  >
+                    Mark held
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() => {
+                      boardService.setStatus(m.id, 'CANCELLED');
+                      refresh();
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
             </div>
-            {m.decisions.length > 0 && (
-              <div>
-                <span className="label">Decisions</span>
-                <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
-                  {m.decisions.map((d) => (
-                    <li key={d.id}>
-                      {d.summary}{' '}
-                      <StatusPill
-                        tone={d.status === 'DONE' ? 'success' : 'warn'}
-                      >
-                        {d.status}
-                      </StatusPill>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {m.notes && <p className="muted">{m.notes}</p>}
-            {canCall && m.status === 'SCHEDULED' && (
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    boardService.markHeld(m.id);
-                    refresh();
-                  }}
-                >
-                  Mark held
-                </button>
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => {
-                    boardService.setStatus(m.id, 'CANCELLED');
-                    refresh();
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+            {m.decisions.some((d) => d.status === 'OPEN') && (
+              <p className="muted" style={{ margin: 0 }}>
+                Open follow-ups from this meeting live at the top of Board.
+              </p>
             )}
           </article>
         ))}
       </div>
 
       <p className="muted">
-        Between meetings: implementation lives in{' '}
-        <Link to="/tasks">Tasks</Link> and ministry follow-ups — not a parallel
-        hierarchy.
+        Open a meeting for agenda detail, attendees, and Freeze / Decide now.
+        Follow-up reports live under each decision. Linked work may also live in{' '}
+        <Link to="/tasks">Tasks</Link>.
       </p>
     </div>
   );
