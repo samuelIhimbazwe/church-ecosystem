@@ -1,21 +1,44 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { isApiEnabled } from '../api';
+import { apiGetProgramPulse, type ApiPulse } from '../api/missionApi';
 import { useAuth } from '../auth/AuthContext';
+import { MissionPulsePanel } from '../components/MissionPulsePanel';
 import { StewardshipPanel } from '../components/StewardshipPanel';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
   confirmedFundingTotal,
   formatRwf,
   fundingGap,
+  openAdvances,
+  upsertHealthSnapshot,
 } from '../domain/stewardship';
+import { computeMissionHealth } from '../domain/missionHealth';
+import {
+  indicatorProgress,
+  latestValue,
+} from '../domain/impact';
+import { templatesForProgramType } from '../domain/taskTemplates';
+import { nextWeeklyOccurrence } from '../domain/checkInQr';
 import type { AttendanceStatus, MembershipType } from '../domain/types';
+import { reportsService } from '../services/reportsService';
 import { missionListPath } from '../navigation/missionPaths';
 import {
-  isChurchLeadership,
+  isChurchLeader,
   missionService,
   peopleService,
   systemsService,
 } from '../services';
+import {
+  hydrateProgramDetailFromApi,
+  writeApproveProgram,
+  writeBeginCloseProgram,
+  writeCreateActivity,
+  writeEnroll,
+  writeMarkAttendance,
+  writeStartProgram,
+  writeSubmitProgram,
+} from '../services/missionWrite';
 
 export function ProgramDetailPage() {
   const { id } = useParams();
@@ -25,17 +48,32 @@ export function ProgramDetailPage() {
   const { account, can, roles, refreshSession } = useAuth();
   const [, setTick] = useState(0);
   const refresh = () => {
-    setTick((t) => t + 1);
-    refreshSession();
+    void (async () => {
+      if (id) await hydrateProgramDetailFromApi(id);
+      setTick((t) => t + 1);
+      refreshSession();
+    })();
   };
   const [msg, setMsg] = useState('');
   const [closeOpen, setCloseOpen] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const hydrated = await hydrateProgramDetailFromApi(id);
+      if (!cancelled && hydrated) setTick((t) => t + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const program = id ? missionService.getProgram(id) : null;
   const canView = can('PROGRAM', 'VIEW');
   const canManageOutside = can('PROGRAM', 'MANAGE');
   const canRecord = can('ACTIVITY', 'RECORD_ATTENDANCE');
-  const churchLead = isChurchLeadership(roles);
+  const churchLead = isChurchLeader(roles);
 
   const [enrollPersonId, setEnrollPersonId] = useState('');
   const [enrollRoleKey, setEnrollRoleKey] = useState('PARTICIPANT');
@@ -54,8 +92,113 @@ export function ProgramDetailPage() {
   const [bapDate, setBapDate] = useState('2026-09-08');
   const [bapPlace, setBapPlace] = useState('ADEPR Kacyiru');
   const [tab, setTab] = useState<
-    'roster' | 'sessions' | 'about' | 'roles' | 'stewardship'
-  >('roster');
+    | 'pulse'
+    | 'roster'
+    | 'sessions'
+    | 'about'
+    | 'roles'
+    | 'stewardship'
+    | 'impact'
+  >('pulse');
+  const [objTitle, setObjTitle] = useState('');
+  const [valueObjId, setValueObjId] = useState('');
+  const [valueIndId, setValueIndId] = useState('');
+  const [valueNum, setValueNum] = useState('');
+  const [pulse, setPulse] = useState<ApiPulse | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      if (isApiEnabled()) {
+        try {
+          const p = await apiGetProgramPulse(id);
+          if (!cancelled) {
+            const local = missionService.getProgram(id);
+            setPulse({
+              ...p,
+              impact:
+                p.impact ??
+                (local
+                  ? reportsService.impactMetrics({
+                      kind: 'PROGRAM',
+                      id: local.id,
+                      usedCost: local.usedCost ?? p.money.usedCost,
+                    })
+                  : p.impact),
+            });
+          }
+          return;
+        } catch {
+          /* local */
+        }
+      }
+      const prog = missionService.getProgram(id);
+      if (!prog || cancelled) return;
+      const acts = missionService.activitiesForProgram(id);
+      const nextSession = [...acts].sort((a, b) =>
+        a.startsAt.localeCompare(b.startsAt),
+      )[0];
+      const health = computeMissionHealth(prog, { status: prog.status });
+      const today = new Date().toISOString().slice(0, 10);
+      if (
+        prog.status !== 'ENDED' &&
+        !(prog.healthSnapshots ?? []).some((h) => h.date === today)
+      ) {
+        const patched = upsertHealthSnapshot(prog, {
+          date: today,
+          score: health.score,
+          tone: health.tone,
+          label: health.label,
+          parts: health.parts,
+        });
+        missionService.updateProgram(id, {
+          healthSnapshots: patched.healthSnapshots,
+        });
+      }
+      const live = missionService.getProgram(id) ?? prog;
+      setPulse({
+        kind: 'PROGRAM',
+        id: live.id,
+        name: live.name,
+        status: live.status,
+        health,
+        money: {
+          plannedCost: Number(live.plannedCost) || 0,
+          confirmedFunding: confirmedFundingTotal(live),
+          usedCost: Number(live.usedCost) || 0,
+          gap: fundingGap(live),
+          openAdvances: openAdvances(live).length,
+        },
+        openRequiredDelivery: (live.deliveryItems ?? [])
+          .filter((d) => d.tier === 'REQUIRED' && d.status === 'TODO')
+          .map((d) => ({ id: d.id, title: d.title, status: d.status })),
+        nextSession: nextSession
+          ? {
+              id: nextSession.id,
+              title: nextSession.title,
+              startsAt: nextSession.startsAt,
+              sessionClosedAt: nextSession.sessionClosedAt,
+            }
+          : null,
+        needsMeHints: [],
+        healthSnapshots: (live.healthSnapshots ?? []).slice(-14).map((h) => ({
+          date: h.date,
+          score: h.score,
+          tone: h.tone,
+          label: h.label,
+        })),
+        impact: reportsService.impactMetrics({
+          kind: 'PROGRAM',
+          id: live.id,
+          usedCost: live.usedCost,
+        }),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   if (!account || !canView) {
     return (
@@ -115,14 +258,14 @@ export function ProgramDetailPage() {
   const confirmed = confirmedFundingTotal(program);
   const gap = fundingGap(program);
 
-  function onSubmitApproval() {
-    const r = missionService.submitProgramForApproval(program!.id);
+  async function onSubmitApproval() {
+    const r = await writeSubmitProgram(program!.id);
     setMsg(r.ok ? 'Submitted for approval' : (r.reason ?? 'Failed'));
     refresh();
   }
 
-  function onApprove() {
-    const r = missionService.approveProgram(
+  async function onApprove() {
+    const r = await writeApproveProgram(
       program!.id,
       account!.personId,
       roles,
@@ -131,32 +274,32 @@ export function ProgramDetailPage() {
     refresh();
   }
 
-  function onEnd() {
-    const r = missionService.beginCloseProgram(program!.id);
+  async function onEnd() {
+    const r = await writeBeginCloseProgram(program!.id);
     if (r.ok) setCloseOpen(true);
     else setMsg(r.reason ?? 'Failed');
     refresh();
   }
 
-  function onEnroll(e: FormEvent) {
+  async function onEnroll(e: FormEvent) {
     e.preventDefault();
     if (!enrollPersonId) return;
     const roleDef = programRoles.find((r) => r.key === enrollRoleKey);
-    const r = missionService.enroll({
+    const r = await writeEnroll({
       programId: program!.id,
       personId: enrollPersonId,
       roleKey: enrollRoleKey,
       role: roleDef?.isStaff ? 'LEADER' : 'PARTICIPANT',
-      asStaff: !!roleDef?.isStaff,
+      staffBypass: !!roleDef?.isStaff,
     });
     setMsg(r.ok ? 'Enrolled' : (r.reason ?? 'Failed'));
     setEnrollPersonId('');
     refresh();
   }
 
-  function onAddSession(e: FormEvent) {
+  async function onAddSession(e: FormEvent) {
     e.preventDefault();
-    const r = missionService.createActivity({
+    const r = await writeCreateActivity({
       programId: program!.id,
       title: sessTitle || `Session ${sessAt}`,
       startsAt: new Date(sessAt).toISOString(),
@@ -167,12 +310,41 @@ export function ProgramDetailPage() {
     refresh();
   }
 
-  function markAttend(
+  async function onSpawnWeekly() {
+    const last = activities[activities.length - 1];
+    if (!last) {
+      setMsg('Add a session first');
+      return;
+    }
+    const next = nextWeeklyOccurrence(last.startsAt, 1)[0];
+    if (!next) {
+      setMsg('Could not compute next weekly occurrence');
+      return;
+    }
+    const seriesId = last.seriesId ?? `aser-${program!.id}`;
+    const seriesLabel = last.seriesLabel ?? `${program!.name} weekly`;
+    const when = new Date(next);
+    const title =
+      last.title.replace(/\s—\s.+$/, '') +
+      ` — ${when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+    const r = await writeCreateActivity({
+      programId: program!.id,
+      title,
+      startsAt: next,
+      location: last.location,
+      seriesId,
+      seriesLabel,
+    });
+    setMsg(r.ok ? 'Spawned next weekly session' : (r.reason ?? 'Failed'));
+    refresh();
+  }
+
+  async function markAttend(
     activityId: string,
     personId: string,
     status: AttendanceStatus,
   ) {
-    missionService.recordAttendance({ activityId, personId, status });
+    await writeMarkAttendance({ activityId, personId, status });
     setMsg(`Attendance: ${status}`);
     refresh();
   }
@@ -261,8 +433,8 @@ export function ProgramDetailPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => {
-                const r = missionService.startProgram(program.id);
+              onClick={async () => {
+                const r = await writeStartProgram(program.id);
                 setMsg(
                   r.ok
                     ? [
@@ -408,6 +580,13 @@ export function ProgramDetailPage() {
       <div className="row">
         <button
           type="button"
+          className={`btn ${tab === 'pulse' ? '' : 'ghost'}`}
+          onClick={() => setTab('pulse')}
+        >
+          Pulse
+        </button>
+        <button
+          type="button"
           className={`btn ${tab === 'roster' ? '' : 'ghost'}`}
           onClick={() => setTab('roster')}
         >
@@ -429,6 +608,13 @@ export function ProgramDetailPage() {
         </button>
         <button
           type="button"
+          className={`btn ${tab === 'impact' ? '' : 'ghost'}`}
+          onClick={() => setTab('impact')}
+        >
+          Impact
+        </button>
+        <button
+          type="button"
           className={`btn ${tab === 'about' ? '' : 'ghost'}`}
           onClick={() => setTab('about')}
         >
@@ -442,6 +628,25 @@ export function ProgramDetailPage() {
           Roles ({programRoles.length})
         </button>
       </div>
+
+      {tab === 'pulse' && (
+        <div className="panel">
+          {pulse ? (
+            <MissionPulsePanel
+              pulse={pulse}
+              sessionHref={
+                pulse.nextSession && !pulse.nextSession.sessionClosedAt
+                  ? `/programs/${program.id}/sessions/${pulse.nextSession.id}`
+                  : undefined
+              }
+            />
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Loading pulse…
+            </p>
+          )}
+        </div>
+      )}
 
       {(tab === 'stewardship' || closeOpen || !!program.closeout) && (
         <StewardshipPanel
@@ -457,6 +662,155 @@ export function ProgramDetailPage() {
             setMsg('Stewardship updated');
           }}
         />
+      )}
+
+      {tab === 'impact' && (
+        <div className="panel stack">
+          <h3 style={{ margin: 0 }}>Impact</h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Objectives → indicators → values. People served{' '}
+            {reportsService.participantsServed(program.id)} · impact{' '}
+            {
+              reportsService.impactMetrics({
+                kind: 'PROGRAM',
+                id: program.id,
+                usedCost: program.usedCost,
+              }).impactLabel
+            }
+            .
+          </p>
+          {(program.objectives ?? []).length === 0 ? (
+            <p className="muted">No objectives yet.</p>
+          ) : (
+            (program.objectives ?? []).map((obj) => (
+              <div key={obj.id}>
+                <strong>{obj.title}</strong>
+                {obj.description && (
+                  <p className="muted" style={{ margin: '0.25rem 0' }}>
+                    {obj.description}
+                  </p>
+                )}
+                <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem' }}>
+                  {obj.indicators.map((ind) => {
+                    const latest = latestValue(obj, ind.id);
+                    const prog = indicatorProgress(ind, latest);
+                    return (
+                      <li key={ind.id}>
+                        {ind.label}:{' '}
+                        <strong>
+                          {latest ? String(latest.value) : '—'}
+                        </strong>
+                        {ind.target != null ? ` / ${ind.target}` : ''}
+                        {prog != null ? ` (${prog}%)` : ''}
+                        {latest?.asOf ? (
+                          <span className="muted"> · as of {latest.asOf}</span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))
+          )}
+          {canManageOutside && (
+            <>
+              <form
+                className="row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!objTitle.trim()) return;
+                  const id = `obj-${Date.now().toString(36)}`;
+                  const r = missionService.upsertProgramObjective(program.id, {
+                    id,
+                    title: objTitle.trim(),
+                    indicators: [
+                      {
+                        id: `ind-${Date.now().toString(36)}`,
+                        label: 'Primary count',
+                        kind: 'COUNT',
+                        target: 10,
+                      },
+                    ],
+                    values: [],
+                  });
+                  setMsg(r.ok ? 'Objective added' : (r.reason ?? 'Failed'));
+                  if (r.ok) setObjTitle('');
+                  refresh();
+                }}
+              >
+                <input
+                  placeholder="New objective title"
+                  value={objTitle}
+                  onChange={(e) => setObjTitle(e.target.value)}
+                  required
+                />
+                <button type="submit" className="btn ghost">
+                  Add objective
+                </button>
+              </form>
+              <form
+                className="row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!valueObjId || !valueIndId) return;
+                  const r = missionService.recordImpactValue(
+                    program.id,
+                    valueObjId,
+                    {
+                      indicatorId: valueIndId,
+                      asOf: new Date().toISOString().slice(0, 10),
+                      value: Number(valueNum) || 0,
+                      recordedByPersonId: account.personId,
+                    },
+                  );
+                  setMsg(r.ok ? 'Value recorded' : (r.reason ?? 'Failed'));
+                  if (r.ok) setValueNum('');
+                  refresh();
+                }}
+              >
+                <select
+                  value={valueObjId}
+                  onChange={(e) => {
+                    setValueObjId(e.target.value);
+                    setValueIndId('');
+                  }}
+                >
+                  <option value="">Objective…</option>
+                  {(program.objectives ?? []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.title}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={valueIndId}
+                  onChange={(e) => setValueIndId(e.target.value)}
+                >
+                  <option value="">Indicator…</option>
+                  {(
+                    (program.objectives ?? []).find((o) => o.id === valueObjId)
+                      ?.indicators ?? []
+                  ).map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Value"
+                  value={valueNum}
+                  onChange={(e) => setValueNum(e.target.value)}
+                  inputMode="numeric"
+                  style={{ maxWidth: '6rem' }}
+                  required
+                />
+                <button type="submit" className="btn">
+                  Record
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       )}
 
       {tab === 'about' && (
@@ -497,6 +851,50 @@ export function ProgramDetailPage() {
                   <li>Invite only</li>
                 )}
               </ul>
+            </div>
+          )}
+          {canManageOutside &&
+            program.status !== 'ENDED' &&
+            program.status !== 'CLOSING' && (
+            <div>
+              <h4 style={{ marginBottom: '0.35rem' }}>Spawn checklist</h4>
+              <form
+                className="row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const tpl = (
+                    e.currentTarget.elements.namedItem(
+                      'tpl',
+                    ) as HTMLSelectElement
+                  ).value;
+                  const r = missionService.spawnTasksFromTemplate({
+                    templateId: tpl,
+                    ownerPersonId: account.personId,
+                    createdByPersonId: account.personId,
+                    systemId: program.ownerSystemId,
+                    contextType: 'PROGRAM',
+                    contextId: program.id,
+                    contextLabel: program.name,
+                  });
+                  setMsg(
+                    r.ok
+                      ? `Spawned ${r.tasks?.length ?? 0} tasks`
+                      : (r.reason ?? 'Failed'),
+                  );
+                  refresh();
+                }}
+              >
+                <select name="tpl">
+                  {templatesForProgramType(program.programType).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} ({t.items.length})
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" className="btn ghost">
+                  Spawn tasks
+                </button>
+              </form>
             </div>
           )}
         </div>
@@ -736,15 +1134,28 @@ export function ProgramDetailPage() {
                 const summary = missionService.attendanceSummary(a.id);
                 return (
                   <tr key={a.id}>
-                    <td>{a.title}</td>
+                    <td>
+                      {a.title}
+                      {a.sessionClosedAt ? (
+                        <span className="muted"> · closed</span>
+                      ) : null}
+                    </td>
                     <td>{new Date(a.startsAt).toLocaleString()}</td>
                     <td>{a.location ?? '—'}</td>
                     <td>
                       {summary.total === 0
                         ? '—'
                         : `${summary.present}/${summary.total}`}
+                      {canManageSessions && (
+                        <div style={{ marginTop: '0.35rem' }}>
+                          <Link to={`/programs/${program.id}/sessions/${a.id}`}>
+                            Session Mode →
+                          </Link>
+                        </div>
+                      )}
                       {canRecord &&
                         program.status === 'ACTIVE' &&
+                        !a.sessionClosedAt &&
                         enrollments
                           .filter((en) => en.status === 'ACTIVE')
                           .slice(0, 3)
@@ -803,9 +1214,20 @@ export function ProgramDetailPage() {
                 onChange={(e) => setSessLoc(e.target.value)}
               />
             </div>
-            <button type="submit" className="btn">
-              Add session
-            </button>
+            <div className="row">
+              <button type="submit" className="btn">
+                Add session
+              </button>
+              {activities.length > 0 && (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void onSpawnWeekly()}
+                >
+                  Spawn next weekly session
+                </button>
+              )}
+            </div>
           </form>
         )}
       </div>
