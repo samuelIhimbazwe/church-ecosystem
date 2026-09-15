@@ -15,7 +15,6 @@ import {
   apiBeginCloseProject,
   apiCancelProject,
   apiCompleteEvent,
-  apiCompleteProject,
   apiCreateActivity,
   apiEnroll,
   apiEventNextSteps,
@@ -44,6 +43,7 @@ import {
 import type {
   EventRegistration,
   EventRegistrationStatus,
+  MembershipType,
   Position,
   ProgramEnrollment,
   ProgramEnrollmentRole,
@@ -787,7 +787,7 @@ export async function writeEventNextSteps(input: {
   eventId: string;
   personId: string;
   enrollProgramId?: string;
-  addMembershipType?: string;
+  addMembershipType?: MembershipType;
   membershipLabel?: string;
   createFollowUpTask?: { title: string; ownerPersonId: string };
 }) {
@@ -803,7 +803,7 @@ export async function writeEventNextSteps(input: {
       if (input.enrollProgramId) {
         await hydrateProgramDetailFromApi(input.enrollProgramId);
       }
-      return { ok: true as const, ...r };
+      return { ...r, ok: true as const };
     } catch (e) {
       return {
         ok: false as const,
