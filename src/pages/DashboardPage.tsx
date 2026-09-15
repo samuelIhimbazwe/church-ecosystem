@@ -1,26 +1,23 @@
-import { type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { SystemLauncher } from '../components/SystemLauncher';
+import { Icon, type IconName } from '../components/ui/Icon';
 import { StatusPill } from '../components/ui/StatusPill';
+import { ListSkeleton } from '../components/ui/Skeleton';
+import { SystemLauncher } from '../components/SystemLauncher';
 import { useAuth } from '../auth/AuthContext';
-import { roleLabel } from '../domain/access';
-import { canApproveEventLevel, canApproveScopeLevel } from '../domain/eventScope';
-import type { SystemId, SystemRole, WorkTask } from '../domain/types';
+import { useAttention } from '../hooks/useAttention';
+import { statusLabel } from '../domain/statusCopy';
+import type { SystemRole } from '../domain/types';
 import {
-  isChurchLeadership,
   missionService,
-  orgService,
   peopleService,
   systemsService,
+  deaconService,
+  churchFinanceService,
 } from '../services';
-
-type NeedItem = {
-  id: string;
-  kind: 'PROGRAM' | 'EVENT' | 'PROJECT' | 'TASK';
-  title: string;
-  reason: string;
-  to: string;
-};
+import { formatRwf } from '../domain/stewardship';
+import { reportsService } from '../services/reportsService';
+import { isChurchLeader } from '../domain/churchLeadership';
 
 type HomePersona =
   | 'leader'
@@ -28,6 +25,8 @@ type HomePersona =
   | 'treasurer'
   | 'ministry'
   | 'member';
+
+type TaskTab = 'all' | 'todo' | 'progress' | 'done';
 
 const MINISTRY_ROLES: SystemRole[] = [
   'CHOIR_LEADER',
@@ -37,654 +36,666 @@ const MINISTRY_ROLES: SystemRole[] = [
   'DEACON_LEADER',
 ];
 
-/** Dashboard preview lists — open the linked full page for the rest. */
-const DASHBOARD_PREVIEW_LIMIT = 3;
-
 function resolvePersona(roles: SystemRole[]): HomePersona {
-  if (isChurchLeadership(roles)) return 'leader';
+  if (roles.includes('CHURCH_LEADER')) return 'leader';
+  if (roles.includes('CATECHIST')) return 'leader';
+  if (roles.includes('PASTOR') || roles.includes('ASSISTANT_PASTOR')) {
+    return 'leader';
+  }
   if (roles.includes('CHURCH_SECRETARY')) return 'secretary';
   if (roles.includes('CHURCH_TREASURER')) return 'treasurer';
   if (roles.some((r) => MINISTRY_ROLES.includes(r))) return 'ministry';
   return 'member';
 }
 
-const PERSONA_COPY: Record<
-  HomePersona,
-  { kicker: string; blurb: string }
-> = {
-  leader: {
-    kicker: 'Pastoral home',
-    blurb:
-      'Clear approvals first, then church calendar and mission. Peer systems stay one handoff away.',
-  },
-  secretary: {
-    kicker: 'Operations home',
-    blurb:
-      'People, participation, and org registry are your desk. Approvals and calendar stay visible.',
-  },
-  treasurer: {
-    kicker: 'Finance home',
-    blurb:
-      'Shared Finance vaults stay ORG_PRIVATE. Open Finance for grants — linking a project fund is not a vault open.',
-  },
-  ministry: {
-    kicker: 'Ministry home',
-    blurb:
-      'Your peer system is primary. Main Church shows church-visible work and anything assigned to you.',
-  },
-  member: {
-    kicker: 'Member home',
-    blurb:
-      'Your tasks, upcoming church dates, and the systems you can enter — without staff clutter.',
-  },
-};
-
-function calHref(item: {
-  kind: string;
-  id: string;
-  programId?: string;
-}) {
+function calHref(item: { kind: string; id: string; programId?: string }) {
   if (item.kind === 'EVENT') return `/events/${item.id}`;
   if (item.programId) return `/programs/${item.programId}`;
   return '/programs';
+}
+
+function isDoneStatus(status: string) {
+  return (
+    status === 'DONE' ||
+    status === 'COMPLETED' ||
+    status === 'ENDED' ||
+    status === 'CANCELLED'
+  );
+}
+
+function isProgressStatus(status: string) {
+  return (
+    status === 'IN_PROGRESS' ||
+    status === 'ACTIVE' ||
+    status === 'SETUP' ||
+    status === 'CLOSING' ||
+    status === 'PENDING_APPROVAL'
+  );
+}
+
+function kindLabel(kind: string) {
+  if (kind === 'EVENT') return 'Event';
+  if (kind === 'ACTIVITY') return 'Activity';
+  if (kind === 'PROGRAM') return 'Program';
+  return kind.replace(/_/g, ' ').toLowerCase();
+}
+
+function CardTitle({
+  icon,
+  tone = 'accent',
+  children,
+}: {
+  icon: IconName;
+  tone?: 'accent' | 'success' | 'coral' | 'sky' | 'yellow';
+  children: ReactNode;
+}) {
+  return (
+    <h3 className="dash-card-title">
+      <span className={`dash-card-icon tone-${tone}`} aria-hidden>
+        <Icon name={icon} size={15} />
+      </span>
+      {children}
+    </h3>
+  );
 }
 
 export function DashboardPage() {
   const {
     personName,
     account,
-    session,
-    positions,
     roles,
     roleLabels,
+    positions,
     availableSystems,
-    memberships,
-    assignments,
-    tasks,
-    entitlements,
     canManagePeople,
-    canViewPeople,
-    can,
   } = useAuth();
 
-  const canAdminTools = can('AUDIT', 'VIEW', 'sys-main');
+  const {
+    items: attentionItems,
+    loading: attentionLoading,
+    unreadCount,
+  } = useAttention();
+
+  const [taskTab, setTaskTab] = useState<TaskTab>('all');
   const persona = resolvePersona(roles);
-  const copy = PERSONA_COPY[persona];
-  const peopleCount = canViewPeople ? peopleService.list().length : 0;
-  const myProfilePath = account ? `/people/${account.personId}` : '/';
-  const orgCount = orgService.list().length;
-  const ministrySystems = availableSystems.filter((s) => s.kind === 'MINISTRY');
   const viewOpts = {
     personId: account?.personId,
     positions,
     canEnterOwner: true,
   };
-  const calendarItems = missionService.calendar('sys-main', viewOpts);
-  const upcoming = calendarItems.slice(0, DASHBOARD_PREVIEW_LIMIT);
-  const calendarMore = calendarItems.length - upcoming.length;
-  const { church, own } = missionService.programsForSystem(
-    'sys-main',
-    viewOpts,
-  );
-  const myTasks = tasks.filter(
-    (t) => t.status === 'TODO' || t.status === 'IN_PROGRESS',
-  );
-  const myTasksPreview = myTasks.slice(0, DASHBOARD_PREVIEW_LIMIT);
-  const tasksMore = myTasks.length - myTasksPreview.length;
 
-  const approvals: NeedItem[] = [];
-  const taskNeeds: NeedItem[] = [];
-  if (account) {
-    if (isChurchLeadership(roles)) {
-      for (const p of missionService.listPrograms({
-        viewerSystemId: 'sys-main',
-        viewOpts,
-      })) {
-        if (p.status === 'PENDING_APPROVAL') {
-          approvals.push({
-            id: `prog-${p.id}`,
-            kind: 'PROGRAM',
-            title: p.name,
-            reason: 'Program awaiting Church Leadership approval',
-            to: `/programs/${p.id}`,
-          });
-        }
-      }
-      for (const p of missionService.listProjects({
-        viewerSystemId: 'sys-main',
-        viewOpts,
-      })) {
-        if (p.status === 'PENDING_APPROVAL' && !p.beyondOwnerScope) {
-          approvals.push({
-            id: `proj-in-${p.id}`,
-            kind: 'PROJECT',
-            title: p.name,
-            reason: 'In-scope project awaiting Church Leadership approval',
-            to: `/projects/${p.id}`,
-          });
-        }
-      }
-    }
+  const projects = useMemo(
+    () => missionService.listProjects({ viewerSystemId: 'sys-main', viewOpts }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account?.personId, positions, roles],
+  );
+  const programs = useMemo(
+    () => missionService.listPrograms({ viewerSystemId: 'sys-main', viewOpts }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account?.personId, positions, roles],
+  );
+  const events = useMemo(
+    () => missionService.listEvents({ viewerSystemId: 'sys-main', viewOpts }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account?.personId, positions, roles],
+  );
+  const tasks = useMemo(
+    () => missionService.listTasks({ viewerSystemId: 'sys-main', viewOpts }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account?.personId, positions, roles],
+  );
+  const calendarItems = useMemo(
+    () => missionService.calendar('sys-main', viewOpts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account?.personId, positions, roles],
+  );
 
-    for (const e of missionService.listEvents({
-      viewerSystemId: 'sys-main',
-      viewOpts,
-    })) {
-      if (e.status !== 'PENDING_APPROVAL' || !e.beyondOwnerScope) continue;
-      const missing = missionService.missingEventApprovals(e.id);
-      const canAny = missing.some((level) =>
-        canApproveEventLevel(level, roles, positions),
+  const myTasks = useMemo(() => {
+    if (!account) return tasks.slice(0, 8);
+    return tasks
+      .filter(
+        (t) =>
+          t.ownerPersonId === account.personId ||
+          (t.helperPersonIds ?? []).includes(account.personId),
+      )
+      .slice(0, 12);
+  }, [tasks, account]);
+
+  const filteredTasks = useMemo(() => {
+    if (taskTab === 'todo')
+      return myTasks.filter(
+        (t) => t.status === 'TODO' || (t.status as string) === 'OPEN',
       );
-      if (canAny) {
-        approvals.push({
-          id: `evt-${e.id}`,
-          kind: 'EVENT',
-          title: e.name,
-          reason: `Pending: ${missing.map((m) => m.label).join(', ')}`,
-          to: `/events/${e.id}`,
-        });
-      }
-    }
+    if (taskTab === 'progress')
+      return myTasks.filter((t) => isProgressStatus(t.status));
+    if (taskTab === 'done') return myTasks.filter((t) => isDoneStatus(t.status));
+    return myTasks;
+  }, [myTasks, taskTab]);
 
-    for (const p of missionService.listProjects({
-      viewerSystemId: 'sys-main',
-      viewOpts,
-    })) {
-      if (p.status === 'PENDING_APPROVAL' && p.beyondOwnerScope) {
-        const missing = missionService.missingProjectApprovals(p.id);
-        const canAny = missing.some((level) =>
-          canApproveScopeLevel(level, roles, positions),
-        );
-        if (canAny) {
-          approvals.push({
-            id: `proj-${p.id}`,
-            kind: 'PROJECT',
-            title: p.name,
-            reason: `Pending: ${missing.map((m) => m.label).join(', ')}`,
-            to: `/projects/${p.id}`,
-          });
-        }
-      }
-      if (
-        p.status === 'PLANNED' &&
-        (can('PROJECT', 'MANAGE') ||
-          p.leadPersonId === account.personId ||
-          p.createdByPersonId === account.personId)
-      ) {
-        approvals.push({
-          id: `proj-setup-${p.id}`,
-          kind: 'PROJECT',
-          title: p.name,
-          reason: 'In SETUP — start running when ready',
-          to: `/projects/${p.id}`,
-        });
-      }
-      if (
-        p.status === 'CLOSING' &&
-        (can('PROJECT', 'MANAGE') ||
-          p.leadPersonId === account.personId ||
-          p.createdByPersonId === account.personId)
-      ) {
-        approvals.push({
-          id: `proj-close-${p.id}`,
-          kind: 'PROJECT',
-          title: p.name,
-          reason: 'In CLOSING — finish stewardship close-out',
-          to: `/projects/${p.id}`,
-        });
-      }
-    }
+  const thisWeek = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return calendarItems
+      .filter((c) => {
+        const d = new Date(c.startsAt);
+        return !Number.isNaN(d.getTime()) && d >= start && d < end;
+      })
+      .slice(0, 8);
+  }, [calendarItems]);
 
-    for (const p of missionService.listPrograms({
-      viewerSystemId: 'sys-main',
-      viewOpts,
-    })) {
-      if (
-        p.status === 'SETUP' &&
-        (can('PROGRAM', 'MANAGE') ||
-          (p.leaderPersonIds ?? []).includes(account.personId))
-      ) {
-        approvals.push({
-          id: `prog-setup-${p.id}`,
-          kind: 'PROGRAM',
-          title: p.name,
-          reason: 'In SETUP — start running when ready',
-          to: `/programs/${p.id}`,
-        });
-      }
-      if (
-        p.status === 'CLOSING' &&
-        (can('PROGRAM', 'MANAGE') ||
-          (p.leaderPersonIds ?? []).includes(account.personId))
-      ) {
-        approvals.push({
-          id: `prog-close-${p.id}`,
-          kind: 'PROGRAM',
-          title: p.name,
-          reason: 'In CLOSING — finish stewardship close-out',
-          to: `/programs/${p.id}`,
-        });
-      }
-    }
+  const upcomingEvents = events
+    .filter((e) => e.status !== 'CANCELLED' && (e.status as string) !== 'ENDED')
+    .slice(0, 5);
 
-    for (const t of myTasks) {
-      taskNeeds.push({
-        id: `task-${t.id}`,
-        kind: 'TASK',
-        title: t.title,
-        reason: t.dueDate ? `Your task · due ${t.dueDate}` : 'Your open task',
-        to: `/tasks/${t.id}`,
-      });
-    }
-  }
+  const openProjects = projects
+    .filter((p) => !isDoneStatus(p.status))
+    .slice(0, 5);
 
-  const needsMe =
-    persona === 'leader' || persona === 'secretary'
-      ? [...approvals, ...taskNeeds]
-      : [...taskNeeds, ...approvals];
+  const peerSystems = availableSystems
+    .filter((s) => s.id !== 'sys-main')
+    .slice(0, 6);
 
-  const peerEntitlements = entitlements.filter((e) => e.systemId !== 'sys-main');
-  const peerPreview = peerEntitlements.slice(0, DASHBOARD_PREVIEW_LIMIT);
-  const peerMore = peerEntitlements.length - peerPreview.length;
+  const pack = useMemo(() => reportsService.leadershipPack(), []);
+  const peopleCount = peopleService.list().length;
+  const firstName = personName.split(' ')[0] || personName;
+  const churchLeader = isChurchLeader(roles);
+  const careUpward = useMemo(
+    () =>
+      churchLeader
+        ? deaconService.listCasesForOversight('CHURCH_LEADER').slice(0, 5)
+        : [],
+    [churchLeader],
+  );
+  const pendingCareSpend = useMemo(
+    () =>
+      churchLeader
+        ? deaconService.listExpenses().filter((e) => e.status === 'PENDING')
+            .length
+        : 0,
+    [churchLeader],
+  );
+  const canViewChurchMoney =
+    account != null && churchFinanceService.canViewGeneral(account.personId);
+
+  const needsYou = attentionItems.slice(0, 6);
+
+  const primaryCta =
+    persona === 'secretary' && canManagePeople ? (
+      <Link to="/people/new" className="btn">
+        Add person
+      </Link>
+    ) : persona === 'treasurer' ? (
+      <Link to="/finance" className="btn">
+        Open treasury
+      </Link>
+    ) : persona === 'leader' ? (
+      <Link to="/inbox" className="btn">
+        Review inbox
+      </Link>
+    ) : (
+      <Link to="/tasks" className="btn">
+        My tasks
+      </Link>
+    );
 
   return (
-    <div className="stack">
-      <div className="detail-hero dash-hero">
-        <p className="hero-kicker">{copy.kicker}</p>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2>Welcome, {personName}</h2>
-          <span className="persona-chip">{roleLabels[0] ?? 'Member'}</span>
+    <div className="dash-board dash-board-home">
+      <header className="dash-home-welcome">
+        <div>
+          <p className="dash-home-greeting">
+            Good day, <strong>{firstName}</strong>
+            <span className="muted">
+              {' '}
+              · {roleLabels[0] ?? 'Member'}
+              {unreadCount > 0 ? ` · ${unreadCount} waiting in Inbox` : ''}
+            </span>
+          </p>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          {copy.blurb}
-          {session?.entryMode === 'handoff' ? ' (SSO handoff.)' : ''}
-        </p>
-        <div className="overview-strip" style={{ marginTop: '0.85rem' }}>
-          {persona === 'secretary' || persona === 'leader' ? (
-            canViewPeople ? (
-              <div className="overview-tile">
-                <div className="label">People</div>
-                <div className="value">{peopleCount}</div>
+        <div className="row">
+          <Link to="/inbox" className="btn secondary">
+            Inbox{unreadCount > 0 ? ` · ${unreadCount}` : ''}
+          </Link>
+          {primaryCta}
+        </div>
+      </header>
+
+      <div className="dash-home-grid">
+        {/* 1 · Needs you */}
+        <section className="dash-card dash-home-span">
+          <div className="dash-card-head">
+            <CardTitle icon="inbox" tone="coral">
+              Needs you
+            </CardTitle>
+            <Link to="/inbox" className="muted">
+              Inbox →
+            </Link>
+          </div>
+          {attentionLoading ? (
+            <ListSkeleton rows={3} />
+          ) : needsYou.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              Nothing waiting. When approvals or handoffs arrive, they show here.
+            </p>
+          ) : (
+            <ul className="dash-deadline-list">
+              {needsYou.map((item) => (
+                <li key={item.id}>
+                  <div>
+                    <Link to={item.href || '/inbox'}>
+                      <strong>{item.title}</strong>
+                    </Link>
+                    {item.reason ? (
+                      <div className="muted" style={{ fontSize: '0.78rem' }}>
+                        {item.reason}
+                      </div>
+                    ) : null}
+                  </div>
+                  {item.unread ? (
+                    <StatusPill tone="warn">New</StatusPill>
+                  ) : (
+                    <span className="muted" style={{ fontSize: '0.75rem' }}>
+                      Open
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* 2 · This week */}
+        <section className="dash-card">
+          <div className="dash-card-head">
+            <CardTitle icon="calendar" tone="accent">
+              This week
+            </CardTitle>
+            <Link to="/calendar" className="muted">
+              Calendar →
+            </Link>
+          </div>
+          {thisWeek.length === 0 && upcomingEvents.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              No events or activities in the next seven days.
+            </p>
+          ) : (
+            <ul className="dash-deadline-list">
+              {(thisWeek.length > 0 ? thisWeek : upcomingEvents.slice(0, 5)).map(
+                (c) => {
+                  const isCal = 'kind' in c && 'startsAt' in c;
+                  if (isCal) {
+                    const item = c as (typeof calendarItems)[number];
+                    return (
+                      <li key={`${item.kind}-${item.id}`}>
+                        <div>
+                          <Link to={calHref(item)}>
+                            <strong>{item.title}</strong>
+                          </Link>
+                          <div className="muted" style={{ fontSize: '0.78rem' }}>
+                            {kindLabel(item.kind)}
+                          </div>
+                        </div>
+                        <span className="dash-deadline-date">
+                          {new Date(item.startsAt).toLocaleDateString(
+                            undefined,
+                            { weekday: 'short', month: 'short', day: 'numeric' },
+                          )}
+                        </span>
+                      </li>
+                    );
+                  }
+                  const e = c as (typeof events)[number];
+                  return (
+                    <li key={e.id}>
+                      <div>
+                        <Link to={`/events/${e.id}`}>
+                          <strong>{e.name}</strong>
+                        </Link>
+                        <div className="muted" style={{ fontSize: '0.78rem' }}>
+                          {statusLabel(e.status)}
+                        </div>
+                      </div>
+                      <span className="dash-deadline-date">
+                        {e.startsAt
+                          ? new Date(e.startsAt).toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                            })
+                          : '—'}
+                      </span>
+                    </li>
+                  );
+                },
+              )}
+            </ul>
+          )}
+        </section>
+
+        {/* 3 · My tasks */}
+        <section className="dash-card">
+          <div className="dash-card-head">
+            <CardTitle icon="task" tone="success">
+              My tasks
+            </CardTitle>
+            <Link to="/tasks" className="muted">
+              All →
+            </Link>
+          </div>
+          <div className="dash-tabs" role="tablist" aria-label="Task filter">
+            {(
+              [
+                ['all', 'All'],
+                ['todo', 'To do'],
+                ['progress', 'Doing'],
+                ['done', 'Done'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={taskTab === id}
+                className={`dash-tab${taskTab === id ? ' active' : ''}`}
+                onClick={() => setTaskTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {filteredTasks.length === 0 ? (
+            <p className="muted" style={{ margin: '0.5rem 0 0' }}>
+              No tasks in this view.{' '}
+              {unreadCount > 0 ? (
+                <Link to="/inbox">Check Inbox</Link>
+              ) : (
+                'Enjoy the quiet — or open Tasks to take something on.'
+              )}
+            </p>
+          ) : (
+            <ul className="dash-task-list">
+              {filteredTasks.slice(0, 5).map((t) => (
+                <li key={t.id}>
+                  <Link to={`/tasks/${t.id}`} className="dash-task-row">
+                    <span className="dash-task-check" aria-hidden />
+                    <span className="dash-task-body">
+                      <strong>{t.title}</strong>
+                      <span className="muted">
+                        {t.systemId
+                          ? systemsService.getById(t.systemId)?.shortName ??
+                            'Ministry'
+                          : 'Main Church'}
+                      </span>
+                    </span>
+                    <StatusPill status={t.status} />
+                    <span className="dash-task-due muted">
+                      {t.dueDate
+                        ? new Date(t.dueDate).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : '—'}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* 4 · Persona block */}
+        {persona === 'leader' && (
+          <section className="dash-card">
+            <div className="dash-card-head">
+              <CardTitle icon="pulse" tone="coral">
+                Leadership glance
+              </CardTitle>
+              <Link to="/reports/leadership" className="muted">
+                Full report →
+              </Link>
+            </div>
+            <p style={{ margin: '0 0 0.65rem' }}>
+              <strong>
+                {pack.health.green} steady · {pack.health.amber} watch ·{' '}
+                {pack.health.red} urgent
+              </strong>
+            </p>
+            <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+              {pack.peopleServed} people touched in recent mission work
+              {pack.money.usedCost
+                ? ` · ${formatRwf(pack.money.usedCost)} used`
+                : ''}
+              {canViewChurchMoney
+                ? ` · church funds ${formatRwf(pack.money.churchFundsBalance)}`
+                : ''}
+              . Church-wide money only — not ministry vaults.
+            </p>
+            {churchLeader && (
+              <div style={{ marginTop: '0.85rem' }}>
+                <p style={{ margin: '0 0 0.35rem', fontWeight: 650 }}>
+                  Care escalated to you
+                </p>
+                {careUpward.length === 0 ? (
+                  <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+                    No open cases escalated to Church Leader
+                    {pendingCareSpend
+                      ? ` · ${pendingCareSpend} care spend waiting your yes`
+                      : ''}
+                  </p>
+                ) : (
+                  <ul className="dash-deadline-list">
+                    {careUpward.map((c) => (
+                      <li key={c.id}>
+                        <div>
+                          <strong>{c.summary}</strong>
+                          <div className="muted" style={{ fontSize: '0.78rem' }}>
+                            {deaconService.CARE_STATUS_LABELS[c.status ?? ''] ??
+                              c.status}
+                            {c.sickLocation
+                              ? ` · ${c.sickLocation.toLowerCase()}`
+                              : ''}
+                          </div>
+                        </div>
+                        <StatusPill tone="warn">
+                          {deaconService.WELLBEING_LABELS[c.category]}
+                        </StatusPill>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {pendingCareSpend > 0 ? (
+                  <p className="muted" style={{ fontSize: '0.85rem' }}>
+                    {pendingCareSpend} benevolence spend(s) need your approval
+                    (wait — no act-then-report).
+                  </p>
+                ) : null}
               </div>
-            ) : null
-          ) : null}
-          {(persona === 'leader' || persona === 'secretary') && (
-            <div className="overview-tile">
-              <div className="label">Approvals</div>
-              <div className="value">{approvals.length}</div>
-            </div>
-          )}
-          <div className="overview-tile">
-            <div className="label">Your tasks</div>
-            <div className="value">{myTasks.length}</div>
-          </div>
-          <div className="overview-tile">
-            <div className="label">Systems</div>
-            <div className="value">{ministrySystems.length}</div>
-          </div>
-          {persona === 'member' && (
-            <div className="overview-tile">
-              <div className="label">Memberships</div>
-              <div className="value">{memberships.length}</div>
-            </div>
-          )}
-          {persona === 'treasurer' && (
-            <div className="overview-tile">
-              <div className="label">Org units</div>
-              <div className="value">{orgCount}</div>
-            </div>
-          )}
-        </div>
-        <div className="row" style={{ marginTop: '0.85rem' }}>
-          {persona === 'leader' && (
-            <>
-              <Link to="/mission" className="btn">
-                Mission board
+            )}
+            <div className="row" style={{ marginTop: '0.85rem' }}>
+              <Link to="/board" className="btn secondary sm">
+                Board
               </Link>
-              <Link to="/people" className="btn secondary">
-                People
+              <Link to="/pastoral" className="btn secondary sm">
+                Pastoral desk
               </Link>
-              <Link to="/calendar" className="btn ghost">
-                Calendar
+              <Link to="/mission" className="btn ghost sm">
+                Mission
               </Link>
-            </>
-          )}
-          {persona === 'secretary' && (
-            <>
-              {canManagePeople && (
-                <Link to="/people/new" className="btn">
+              {canViewChurchMoney ? (
+                <Link to="/finance" className="btn ghost sm">
+                  Church funds
+                </Link>
+              ) : null}
+            </div>
+          </section>
+        )}
+
+        {persona === 'secretary' && (
+          <section className="dash-card">
+            <div className="dash-card-head">
+              <CardTitle icon="users" tone="sky">
+                Directory
+              </CardTitle>
+              <Link to="/people" className="muted">
+                People →
+              </Link>
+            </div>
+            <p style={{ margin: 0 }}>
+              <strong style={{ fontSize: '1.5rem' }}>{peopleCount}</strong>
+              <span className="muted"> people in the registry</span>
+            </p>
+            <p className="muted" style={{ margin: '0.5rem 0 0', fontSize: '0.85rem' }}>
+              Keep records current so ministries know who they serve.
+            </p>
+            {canManagePeople ? (
+              <div className="row" style={{ marginTop: '0.85rem' }}>
+                <Link to="/people/new" className="btn sm">
                   Add person
                 </Link>
-              )}
-              <Link to="/people" className="btn secondary">
-                Directory
-              </Link>
-              {can('MEMBERSHIP', 'MANAGE') && (
-                <Link to="/participation" className="btn ghost">
-                  Participation
-                </Link>
-              )}
-              {can('ORG_UNIT', 'MANAGE') && (
-                <Link to="/organization" className="btn ghost">
+                <Link to="/organization" className="btn ghost sm">
                   Organisation
                 </Link>
-              )}
-            </>
-          )}
-          {persona === 'treasurer' && (
-            <>
-              <Link to="/systems/finance" className="btn">
-                Open Finance
-              </Link>
-              <Link to="/projects" className="btn secondary">
-                Projects
-              </Link>
-            </>
-          )}
-          {persona === 'ministry' && (
-            <>
-              <Link to="/tasks" className="btn">
-                My tasks
-              </Link>
-              <Link to="/participation" className="btn secondary">
-                Why I can enter
-              </Link>
-            </>
-          )}
-          {persona === 'member' && (
-            <>
-              <Link to={myProfilePath} className="btn">
-                My profile
-              </Link>
-              <Link to="/tasks" className="btn secondary">
-                My tasks
-              </Link>
-              <Link to="/calendar" className="btn ghost">
-                Calendar
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
+              </div>
+            ) : null}
+          </section>
+        )}
 
-      {needsMe.length > 0 && (
-        <div className="needs-me">
-          <h3>
-            Needs me · {needsMe.length}
-            {approvals.length > 0 && persona === 'leader'
-              ? ` · ${approvals.length} approval${approvals.length === 1 ? '' : 's'}`
-              : ''}
-          </h3>
-          <p className="muted" style={{ marginTop: 0, marginBottom: '0.65rem' }}>
-            {persona === 'leader'
-              ? 'Approvals you can clear, then tasks assigned to you.'
-              : 'Items waiting on you.'}
-          </p>
-          <ul className="needs-me-list">
-            {needsMe.slice(0, 8).map((n) => (
-              <li key={n.id}>
-                <div>
-                  <StatusPill
-                    tone={n.kind === 'TASK' ? 'info' : 'neutral'}
-                  >
-                    {n.kind}
-                  </StatusPill>{' '}
-                  <Link to={n.to}>
-                    <strong>{n.title}</strong>
-                  </Link>
-                  <div className="muted" style={{ fontSize: '0.85rem' }}>
-                    {n.reason}
+        {persona === 'treasurer' && (
+          <section className="dash-card">
+            <div className="dash-card-head">
+              <CardTitle icon="chart" tone="yellow">
+                Treasury
+              </CardTitle>
+              <Link to="/finance" className="muted">
+                Open →
+              </Link>
+            </div>
+            <p style={{ margin: 0 }}>
+              Recent mission spend recorded:{' '}
+              <strong>{formatRwf(pack.money.usedCost)}</strong>
+            </p>
+            <p className="muted" style={{ margin: '0.5rem 0 0', fontSize: '0.85rem' }}>
+              Collections, budgets, and the General Church Fund live in Treasury —
+              not on this home screen.
+            </p>
+            <div className="row" style={{ marginTop: '0.85rem' }}>
+              <Link to="/finance/collections" className="btn sm">
+                Collections
+              </Link>
+              <Link to="/finance/reports" className="btn ghost sm">
+                Reports
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {(persona === 'ministry' || persona === 'member') && (
+          <section className="dash-card">
+            <div className="dash-card-head">
+              <CardTitle icon="folder" tone="accent">
+                Open work
+              </CardTitle>
+              <Link to="/projects" className="muted">
+                Projects →
+              </Link>
+            </div>
+            {openProjects.length === 0 && programs.length === 0 ? (
+              <p className="muted" style={{ margin: 0 }}>
+                No open projects or programs in view yet.
+              </p>
+            ) : (
+              <ul className="dash-feed">
+                {openProjects.slice(0, 3).map((p) => (
+                  <li key={p.id}>
+                    <span className="dash-feed-mark" aria-hidden />
+                    <div>
+                      <Link to={`/projects/${p.id}`}>
+                        <strong>{p.name}</strong>
+                      </Link>
+                      <div className="muted" style={{ fontSize: '0.8rem' }}>
+                        Project · {statusLabel(p.status)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+                {programs
+                  .filter((p) => p.status === 'ACTIVE')
+                  .slice(0, 3)
+                  .map((p) => (
+                    <li key={p.id}>
+                      <span className="dash-feed-mark" aria-hidden />
+                      <div>
+                        <Link to={`/programs/${p.id}`}>
+                          <strong>{p.name}</strong>
+                        </Link>
+                        <div className="muted" style={{ fontSize: '0.8rem' }}>
+                          Program · {statusLabel(p.status)}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {/* 5 · Ministries */}
+        <section className="dash-card">
+          <div className="dash-card-head">
+            <CardTitle icon="systems" tone="sky">
+              Your ministries
+            </CardTitle>
+            <Link to="/systems" className="muted">
+              All →
+            </Link>
+          </div>
+          {peerSystems.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              No ministry systems on this account yet. Main Church tools are in
+              the sidebar.
+            </p>
+          ) : (
+            <ul className="dash-peer-list">
+              {peerSystems.map((s) => (
+                <li key={s.id}>
+                  <span className="dash-peer-mark" aria-hidden>
+                    {(s.shortName ?? s.name).slice(0, 2).toUpperCase()}
+                  </span>
+                  <div>
+                    <strong>{s.shortName ?? s.name}</strong>
+                    <div className="muted" style={{ fontSize: '0.78rem' }}>
+                      {s.kind === 'MINISTRY'
+                        ? 'Ministry'
+                        : s.kind === 'MAIN'
+                          ? 'Main Church'
+                          : s.kind === 'SHARED'
+                            ? 'Shared'
+                            : 'System'}
+                    </div>
                   </div>
-                </div>
-                <Link to={n.to} className="btn ghost">
-                  Open
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  <StatusPill
+                    tone={s.status === 'ACTIVE' ? 'success' : 'neutral'}
+                  >
+                    {statusLabel(s.status)}
+                  </StatusPill>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {/* 6 · Launcher */}
+      <section className="dash-card dash-home-launcher">
+        <div className="dash-card-head">
+          <CardTitle icon="systems" tone="accent">
+            Open a system
+          </CardTitle>
         </div>
-      )}
-
-      {persona === 'ministry' || persona === 'treasurer' ? (
-        <div className="dashboard-home-row">
-          <div className="dashboard-home-launcher">
-            <div
-              className="row"
-              style={{
-                justifyContent: 'space-between',
-                marginBottom: '0.15rem',
-              }}
-            >
-              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)' }}>
-                {persona === 'treasurer' ? 'Finance & peers' : 'Your systems'}
-              </h2>
-              {canAdminTools ? <Link to="/systems">All systems</Link> : null}
-            </div>
-            <SystemLauncher excludeMain />
-          </div>
-          <aside className="dashboard-home-side" aria-label="Home previews">
-            <DashboardCalendarPanel
-              upcoming={upcoming}
-              calendarMore={calendarMore}
-            />
-            <DashboardTasksPanel
-              title="Your open tasks"
-              tasks={myTasksPreview}
-              tasksMore={tasksMore}
-            />
-            <DashboardAccessPanel
-              title={
-                persona === 'ministry' ? 'Why you can enter' : 'System access'
-              }
-              peerPreview={peerPreview}
-              peerMore={peerMore}
-              summaryLine={
-                <>
-                  {roles.map(roleLabel).join(' · ') || 'Member'} ·{' '}
-                  {memberships.length} memberships · {assignments.length}{' '}
-                  assignments
-                </>
-              }
-            />
-          </aside>
-        </div>
-      ) : null}
-
-      {(persona === 'leader' ||
-        persona === 'secretary' ||
-        persona === 'member') && (
-        <div className="dashboard-home-row">
-          <div className="dashboard-home-launcher">
-            <div
-              className="row"
-              style={{
-                justifyContent: 'space-between',
-                marginBottom: '0.15rem',
-              }}
-            >
-              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)' }}>
-                System launcher
-              </h2>
-              {canAdminTools ? <Link to="/systems">All systems</Link> : null}
-            </div>
-            <SystemLauncher excludeMain />
-          </div>
-          <aside className="dashboard-home-side" aria-label="Home previews">
-            <DashboardCalendarPanel
-              upcoming={upcoming}
-              calendarMore={calendarMore}
-            />
-            <DashboardTasksPanel
-              title={
-                persona === 'member' ? 'My open tasks' : 'Your open tasks'
-              }
-              tasks={myTasksPreview}
-              tasksMore={tasksMore}
-            />
-            <DashboardAccessPanel
-              title={
-                persona === 'member' ? 'Why you can enter' : 'System access'
-              }
-              peerPreview={peerPreview}
-              peerMore={peerMore}
-              summaryLine={
-                <>
-                  {roles.map(roleLabel).join(' · ') || 'Member'} ·{' '}
-                  {memberships.length} memberships · {assignments.length}{' '}
-                  assignments
-                  {persona === 'leader'
-                    ? ` · ${church.length} church programs`
-                    : ''}
-                  {persona === 'member'
-                    ? ` · private programs: ${own.length}`
-                    : ''}
-                </>
-              }
-            />
-          </aside>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DashboardCalendarPanel({
-  upcoming,
-  calendarMore,
-}: {
-  upcoming: {
-    kind: string;
-    id: string;
-    title: string;
-    startsAt: string;
-    systemId: string;
-  }[];
-  calendarMore: number;
-}) {
-  return (
-    <div className="panel dashboard-preview-panel">
-      <div
-        className="row"
-        style={{ justifyContent: 'space-between', marginBottom: '0.35rem' }}
-      >
-        <h3 style={{ margin: 0 }}>Church calendar</h3>
-        <Link to="/calendar">Full calendar</Link>
-      </div>
-      {upcoming.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          No upcoming items
-        </p>
-      ) : (
-        <ul className="dashboard-preview-list">
-          {upcoming.map((item) => (
-            <li key={`${item.kind}-${item.id}`}>
-              <Link to={calHref(item)}>
-                <strong>{item.title}</strong>
-              </Link>
-              <div className="muted">
-                {new Date(item.startsAt).toLocaleDateString()} · {item.kind} ·{' '}
-                {systemsService.getById(item.systemId as SystemId)?.shortName ??
-                  item.systemId}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="dashboard-preview-foot">
-        {calendarMore > 0 ? (
-          <Link to="/calendar">+{calendarMore} more →</Link>
-        ) : (
-          <span className="row" style={{ gap: '0.65rem' }}>
-            <Link to="/mission">Mission</Link>
-            <Link to="/events">Events</Link>
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DashboardTasksPanel({
-  title,
-  tasks,
-  tasksMore,
-}: {
-  title: string;
-  tasks: WorkTask[];
-  tasksMore: number;
-}) {
-  return (
-    <div className="panel dashboard-preview-panel">
-      <h3 style={{ margin: 0, marginBottom: '0.35rem' }}>{title}</h3>
-      {tasks.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          None
-        </p>
-      ) : (
-        <ul className="dashboard-preview-list">
-          {tasks.map((t) => (
-            <li key={t.id}>
-              <Link to={`/tasks/${t.id}`}>
-                <strong>{t.title}</strong>
-              </Link>
-              <div className="muted">
-                {t.contextLabel ?? t.status}
-                {t.dueDate ? ` · due ${t.dueDate}` : ''}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="dashboard-preview-foot">
-        <Link to="/tasks">
-          {tasksMore > 0 ? `+${tasksMore} more tasks →` : 'All tasks →'}
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function DashboardAccessPanel({
-  title,
-  peerPreview,
-  peerMore,
-  summaryLine,
-}: {
-  title: string;
-  peerPreview: { systemId: string; reasons: string[] }[];
-  peerMore: number;
-  summaryLine: ReactNode;
-}) {
-  return (
-    <div className="panel dashboard-preview-panel">
-      <h3 style={{ margin: 0, marginBottom: '0.35rem' }}>{title}</h3>
-      {peerPreview.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          No ministry systems entitled yet.
-        </p>
-      ) : (
-        <ul className="dashboard-preview-list">
-          {peerPreview.map((e) => (
-            <li key={e.systemId}>
-              <strong>
-                {systemsService.getById(e.systemId as SystemId)?.shortName ??
-                  e.systemId}
-              </strong>
-              <div className="muted">{e.reasons[0] ?? ''}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="dashboard-preview-foot">
-        {peerMore > 0 ? (
-          <Link to="/access">+{peerMore} more →</Link>
-        ) : (
-          <Link to="/access">Access engine →</Link>
-        )}
-        <p className="muted" style={{ margin: '0.35rem 0 0', fontSize: '0.75rem' }}>
-          {summaryLine}
-        </p>
-      </div>
+        <SystemLauncher compact excludeMain />
+      </section>
     </div>
   );
 }
