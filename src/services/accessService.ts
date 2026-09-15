@@ -1,4 +1,5 @@
 import {
+  ACCOUNTS,
   ASSIGNMENTS,
   MEMBERSHIPS,
   POSITIONS,
@@ -195,5 +196,20 @@ export const accessService = {
 
   canEnter(personId: string, systemId: SystemId): boolean {
     return this.can(personId, systemId, 'SYSTEM', 'ENTER');
+  },
+
+  /** Person ids who are allowed for the given resource/action in a system. */
+  peopleWhoCan(
+    resource: Resource,
+    action: Action,
+    systemId: SystemId,
+    now = new Date(),
+  ): string[] {
+    const personIds = [
+      ...new Set(ACCOUNTS.map((a) => a.personId).filter(Boolean)),
+    ];
+    return personIds.filter((personId) =>
+      this.can(personId, systemId, resource, action, now),
+    );
   },
 };
