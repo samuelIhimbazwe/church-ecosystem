@@ -31,7 +31,7 @@ describe('choirTenancy', () => {
       {
         id: 'm1',
         personId: 'p-choir-leader',
-        type: 'MINISTRY_MEMBER',
+        type: 'CHOIR_MEMBER',
         label: 'Ijwi member',
         status: 'ACTIVE',
         startDate: '2022-01-01',
