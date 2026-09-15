@@ -12,12 +12,16 @@ import {
   updateDeaconContribution,
   updateDeaconExpense,
 } from '../data/deaconSeed';
+import { POSITIONS } from '../data/seed';
 import type {
+  CareEscalateTo,
+  CareSubmitterRole,
   DeaconCareCase,
   DeaconCaseStatus,
   DeaconContribution,
   DeaconOffice,
   DeaconPaymentMethod,
+  WellbeingCategory,
 } from '../domain/types';
 import { peopleService } from './authService';
 import {
@@ -36,8 +40,41 @@ function personLabel(personId: string): string {
   return p?.preferredName || p?.fullName || personId;
 }
 
+function isChurchLeaderPerson(personId: string): boolean {
+  return POSITIONS.some(
+    (p) =>
+      p.personId === personId &&
+      p.status === 'ACTIVE' &&
+      p.systemRole === 'CHURCH_LEADER',
+  );
+}
+
+export const WELLBEING_LABELS: Record<WellbeingCategory, string> = {
+  NORMAL: 'Normal',
+  SICK: 'Sick',
+  DIED_OR_BEREAVED: 'Died / lost someone',
+  OTHER_ISSUE: 'Other serious issue',
+  WEDDING: 'Have a wedding',
+  BAPTISM: 'Have a baptism',
+  BREAKTHROUGH: 'Breakthrough / achievement',
+};
+
+export const CARE_STATUS_LABELS: Record<string, string> = {
+  OPEN: 'Open case',
+  HANDLING: 'Handling it',
+  WILL_HANDLE: 'We will handle it',
+  CLOSED: 'Closed case',
+  IN_PROGRESS: 'Handling it',
+};
+
+function normalizeStatus(status: DeaconCaseStatus): DeaconCaseStatus {
+  return status === 'IN_PROGRESS' ? 'HANDLING' : status;
+}
+
 export const deaconService = {
   personLabel,
+  WELLBEING_LABELS,
+  CARE_STATUS_LABELS,
 
   officeLabel(office: DeaconOffice): string {
     const map: Record<DeaconOffice, string> = {
@@ -56,16 +93,120 @@ export const deaconService = {
     );
   },
 
-  listCases(filter?: { status?: DeaconCaseStatus }) {
-    return DEACON_CASES.filter((c) =>
-      filter?.status ? c.status === filter.status : true,
-    );
+  listCases(filter?: {
+    status?: DeaconCaseStatus;
+    escalateTo?: CareEscalateTo;
+  }) {
+    return DEACON_CASES.filter((c) => {
+      if (filter?.status && normalizeStatus(c.status) !== filter.status) {
+        return false;
+      }
+      if (filter?.escalateTo && c.escalateTo !== filter.escalateTo) {
+        return false;
+      }
+      return true;
+    });
+  },
+
+  /** Upward view for Leader/pastor/catechist — summary only, no privateNotes. */
+  listCasesForOversight(escalateTo?: CareEscalateTo) {
+    return this.listCases(
+      escalateTo ? { escalateTo } : undefined,
+    ).map((c) => ({
+      id: c.id,
+      title: c.title,
+      personId: c.personId,
+      householdNote: c.householdNote,
+      status: normalizeStatus(c.status),
+      priority: c.priority,
+      openedOn: c.openedOn,
+      category: c.category,
+      categoryDetail: c.categoryDetail,
+      summary: c.summary ?? c.title,
+      escalateTo: c.escalateTo,
+      sickSince: c.sickSince,
+      sickLocation: c.sickLocation,
+      sickStatus: c.sickStatus,
+      assignedPersonId: c.assignedPersonId,
+    }));
   },
 
   getCase(id: string) {
     return DEACON_CASES.find((c) => c.id === id) ?? null;
   },
 
+  /**
+   * Submit a care case (member / catechist / secretary / deacon).
+   * Deacons prioritize; does not silently overwrite as final truth.
+   */
+  submitCase(input: {
+    title: string;
+    personId?: string;
+    householdNote?: string;
+    priority?: DeaconCareCase['priority'];
+    category: WellbeingCategory;
+    categoryDetail?: string;
+    summary?: string;
+    privateNotes?: string;
+    submittedByPersonId: string;
+    submittedByRole: CareSubmitterRole;
+    escalateTo?: CareEscalateTo;
+    sickSince?: string;
+    sickLocation?: DeaconCareCase['sickLocation'];
+    sickStatus?: string;
+    openedOn?: string;
+    assignedPersonId?: string;
+  }) {
+    if (
+      (input.category === 'OTHER_ISSUE' || input.category === 'BREAKTHROUGH') &&
+      !input.categoryDetail?.trim()
+    ) {
+      return {
+        ok: false as const,
+        reason: 'Name the issue or breakthrough',
+      };
+    }
+    const summary =
+      input.summary?.trim() ||
+      [
+        WELLBEING_LABELS[input.category],
+        input.categoryDetail,
+        input.sickLocation
+          ? input.sickLocation === 'HOSPITAL'
+            ? 'hospital'
+            : input.sickLocation === 'HOME'
+              ? 'home'
+              : 'other location'
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+    const c: DeaconCareCase = {
+      id: nid('dcase'),
+      title: input.title,
+      personId: input.personId || undefined,
+      householdNote: input.householdNote,
+      status: 'OPEN',
+      priority: input.priority ?? 'NORMAL',
+      openedOn: input.openedOn ?? new Date().toISOString().slice(0, 10),
+      assignedPersonId: input.assignedPersonId,
+      category: input.category,
+      categoryDetail: input.categoryDetail,
+      summary,
+      privateNotes: input.privateNotes,
+      submittedByPersonId: input.submittedByPersonId,
+      submittedByRole: input.submittedByRole,
+      escalateTo: input.escalateTo,
+      sickSince: input.sickSince,
+      sickLocation: input.sickLocation,
+      sickStatus: input.sickStatus,
+    };
+    pushDeaconCase(c);
+    return { ok: true as const, case: c };
+  },
+
+  /** @deprecated Prefer submitCase */
   openCase(input: {
     title: string;
     personId?: string;
@@ -75,23 +216,41 @@ export const deaconService = {
     notes?: string;
     openedOn: string;
   }) {
-    const c: DeaconCareCase = {
-      id: nid('dcase'),
+    const r = this.submitCase({
       title: input.title,
-      personId: input.personId || undefined,
+      personId: input.personId,
       householdNote: input.householdNote,
-      status: 'OPEN',
       priority: input.priority,
+      category: 'OTHER_ISSUE',
+      categoryDetail: input.title,
+      privateNotes: input.notes,
+      summary: input.title,
+      submittedByPersonId: input.assignedPersonId ?? 'unknown',
+      submittedByRole: 'DEACON',
       openedOn: input.openedOn,
       assignedPersonId: input.assignedPersonId,
-      notes: input.notes,
-    };
-    pushDeaconCase(c);
-    return c;
+    });
+    return r.ok ? r.case : null;
   },
 
   updateCaseStatus(id: string, status: DeaconCaseStatus) {
-    updateDeaconCase(id, { status });
+    updateDeaconCase(id, { status: normalizeStatus(status) });
+  },
+
+  prioritizeCase(
+    id: string,
+    patch: {
+      priority?: DeaconCareCase['priority'];
+      status?: DeaconCaseStatus;
+      escalateTo?: CareEscalateTo;
+      assignedPersonId?: string;
+      summary?: string;
+    },
+  ) {
+    updateDeaconCase(id, {
+      ...patch,
+      status: patch.status ? normalizeStatus(patch.status) : undefined,
+    });
   },
 
   listVisits(caseId?: string) {
@@ -114,7 +273,7 @@ export const deaconService = {
     };
     pushDeaconVisit(v);
     if (input.caseId) {
-      updateDeaconCase(input.caseId, { status: 'IN_PROGRESS' });
+      updateDeaconCase(input.caseId, { status: 'HANDLING' });
     }
     return v;
   },
@@ -290,6 +449,10 @@ export const deaconService = {
     return r;
   },
 
+  /**
+   * Benevolence / care spend — Church Leader must approve (always wait for him).
+   * Deacons may reject a pending row; only Leader can approve.
+   */
   approveExpense(
     expenseId: string,
     actorPersonId: string,
@@ -299,6 +462,12 @@ export const deaconService = {
     if (!e) return { ok: false, reason: 'Expense not found' };
     if (e.status !== 'PENDING') {
       return { ok: false, reason: 'Already processed' };
+    }
+    if (approve && !isChurchLeaderPerson(actorPersonId)) {
+      return {
+        ok: false,
+        reason: 'Church Leader must approve care spending — wait for him',
+      };
     }
     if (!approve) {
       updateDeaconExpense(e.id, {
@@ -326,13 +495,14 @@ export const deaconService = {
   stats() {
     return {
       rosterCount: this.listRoster().length,
-      openCases: DEACON_CASES.filter((c) => c.status !== 'CLOSED').length,
+      openCases: DEACON_CASES.filter(
+        (c) => normalizeStatus(c.status) !== 'CLOSED',
+      ).length,
       visits: DEACON_VISITS.length,
       pendingPayments: DEACON_CONTRIBUTIONS.filter((c) => c.status === 'PENDING')
         .length,
       pendingExpenses: DEACON_EXPENSES.filter((e) => e.status === 'PENDING')
         .length,
-      fundBalance: financeService.balance('fund-deacon'),
     };
   },
 };
