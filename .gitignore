@@ -36,6 +36,9 @@ server/prisma/*.db-shm
 server/prisma/*.db-wal
 server/prisma/dev.db*
 
+# Local event waitlist offer windows (W3)
+server/data/event-offers.json
+
 # Test / coverage / caches
 coverage/
 .nyc_output/
