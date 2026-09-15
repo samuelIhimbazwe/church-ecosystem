@@ -8,6 +8,7 @@ import {
   fundingGap,
   intendedFundingTotal,
   LEFTOVER_LABELS,
+  openAdvances,
   remainingConfirmed,
   requiredDeliveryOpen,
   SOURCE_TYPE_LABELS,
@@ -61,6 +62,9 @@ export function StewardshipPanel({
   const remaining = remainingConfirmed(steward);
   const variance = costVariance(steward);
   const openRequired = requiredDeliveryOpen(steward);
+  const openAdv = openAdvances(steward);
+  const needsForce =
+    openRequired.length > 0 || openAdv.length > 0 || openTaskCount > 0;
 
   const [plannedDraft, setPlannedDraft] = useState(
     planned ? String(planned) : '',
@@ -85,7 +89,9 @@ export function StewardshipPanel({
   const [waiveId, setWaiveId] = useState<string | null>(null);
   const [waiveNote, setWaiveNote] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [confirmFund, setConfirmFund] = useState(defaultFundId ?? '');
+  const [confirmFund, setConfirmFund] = useState(
+    () => defaultFundId || funds[0]?.id || '',
+  );
 
   const [workSummary, setWorkSummary] = useState('');
   const [moneySummary, setMoneySummary] = useState('');
@@ -94,6 +100,7 @@ export function StewardshipPanel({
   const [narrative, setNarrative] = useState('');
   const [closeUsed, setCloseUsed] = useState(used ? String(used) : '');
   const [forceClose, setForceClose] = useState(false);
+  const [forceReason, setForceReason] = useState('');
   const [localMsg, setLocalMsg] = useState('');
 
   const banners = useMemo(() => {
@@ -210,12 +217,14 @@ export function StewardshipPanel({
   }
 
   function doConfirmSource(sourceId: string) {
-    if (!confirmFund) {
+    const fundId = confirmFund || defaultFundId || funds[0]?.id || '';
+    if (!fundId) {
       setLocalMsg('Pick a fund to confirm');
       return;
     }
+    if (!confirmFund) setConfirmFund(fundId);
     const r = missionService.confirmFundingSource(kind, id, sourceId, {
-      fundId: confirmFund,
+      fundId,
       personId,
     });
     setLocalMsg(r.ok ? 'Source confirmed' : (r.reason ?? 'Failed'));
@@ -262,6 +271,16 @@ export function StewardshipPanel({
       setLocalMsg('Work and money summaries are required');
       return;
     }
+    if (needsForce && !forceClose) {
+      setLocalMsg(
+        'Resolve open advances / required delivery / tasks, or check force close',
+      );
+      return;
+    }
+    if (needsForce && forceClose && forceReason.trim().length < 8) {
+      setLocalMsg('Force close requires a reason (at least 8 characters)');
+      return;
+    }
     const usedN = Number(closeUsed);
     const closeoutBase = {
       closedByPersonId: personId,
@@ -270,17 +289,23 @@ export function StewardshipPanel({
       leftoverDecision: leftover,
       leftoverNote: leftoverNote.trim() || undefined,
       narrative: narrative.trim() || undefined,
+      forceReason:
+        needsForce && forceClose ? forceReason.trim() : undefined,
     };
     const r =
       kind === 'PROGRAM'
         ? missionService.endProgram(id, {
             closeout: closeoutBase,
             forceClose,
+            forceReason:
+              needsForce && forceClose ? forceReason.trim() : undefined,
             usedCost: Number.isFinite(usedN) ? usedN : undefined,
           })
         : missionService.completeProject(id, {
             closeout: closeoutBase,
             forceClose,
+            forceReason:
+              needsForce && forceClose ? forceReason.trim() : undefined,
             usedCost: Number.isFinite(usedN) ? usedN : undefined,
             outcomeNote: narrative.trim() || undefined,
           });
@@ -288,6 +313,7 @@ export function StewardshipPanel({
     if (r.ok) {
       onCloseOpenChange?.(false);
       setForceClose(false);
+      setForceReason('');
     }
     onChanged();
   }
@@ -782,15 +808,37 @@ export function StewardshipPanel({
               onChange={(e) => setNarrative(e.target.value)}
             />
           </div>
-          {(openRequired.length > 0 || openTaskCount > 0) && (
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={forceClose}
-                onChange={(e) => setForceClose(e.target.checked)}
-              />
-              Force close despite open required / tasks
-            </label>
+          {(openRequired.length > 0 ||
+            openAdv.length > 0 ||
+            openTaskCount > 0) && (
+            <div className="stack" style={{ gap: '0.5rem' }}>
+              {openAdv.length > 0 && (
+                <p className="muted" style={{ margin: 0 }}>
+                  {openAdv.length} open advance(s) — retire receipts or force
+                  close with a reason.
+                </p>
+              )}
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={forceClose}
+                  onChange={(e) => setForceClose(e.target.checked)}
+                />
+                Force close despite open advances / required / tasks
+              </label>
+              {forceClose && (
+                <div className="field">
+                  <label>Force reason (required)</label>
+                  <textarea
+                    rows={2}
+                    value={forceReason}
+                    onChange={(e) => setForceReason(e.target.value)}
+                    placeholder="Why are you closing with open items?"
+                    required
+                  />
+                </div>
+              )}
+            </div>
           )}
           <div className="row">
             <button type="submit" className="btn">
