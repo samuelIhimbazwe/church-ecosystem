@@ -74,10 +74,27 @@ export interface MissionCloseout {
   leftoverDecision: LeftoverDecision;
   leftoverNote?: string;
   narrative?: string;
+  /** Required when force-closing past open advances / delivery / tasks. */
+  forceReason?: string;
   plannedCostSnapshot?: number;
   usedCostSnapshot?: number;
   confirmedFundingSnapshot?: number;
+  /** Frozen people count at close (archive / impact forever). */
+  participantsServedSnapshot?: number;
 }
+
+export type MissionHealthSnapshot = {
+  date: string; // YYYY-MM-DD
+  score: number;
+  tone: string;
+  label: string;
+  parts?: {
+    schedule: number;
+    money: number;
+    delivery: number;
+    people: number;
+  };
+};
 
 /** Float issued to a leader — must retire with receipts. */
 export interface MissionAdvance {
@@ -137,6 +154,23 @@ export interface MissionStewardship {
   /** Current envelope label e.g. "2026". */
   envelopePeriod?: string;
   phaseRenewals?: MissionPhaseRenewal[];
+  /** Daily health snapshots (optional; last ~30 kept). */
+  healthSnapshots?: MissionHealthSnapshot[];
+  /** W4 delivery blockers / risks. */
+  blockers?: import('./deliveryRisk').MissionBlocker[];
+}
+
+/** Upsert today's health into stewardship; keep last 30 days. */
+export function upsertHealthSnapshot(
+  s: MissionStewardship,
+  snap: MissionHealthSnapshot,
+  keep = 30,
+): MissionStewardship {
+  const rest = (s.healthSnapshots ?? []).filter((h) => h.date !== snap.date);
+  const healthSnapshots = [...rest, snap]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-keep);
+  return { ...s, healthSnapshots };
 }
 
 export function confirmedFundingTotal(s?: MissionStewardship): number {
