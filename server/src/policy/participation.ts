@@ -10,8 +10,9 @@ import type {
 
 const GOVERNANCE_ROLES: SystemRole[] = [
   'CHURCH_LEADER',
+  'PASTOR',
   'ASSISTANT_PASTOR',
-  'CHURCH_SECRETARY',
+  'CATECHIST',
 ];
 
 function isActiveDateRange(
