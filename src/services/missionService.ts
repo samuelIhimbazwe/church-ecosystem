@@ -18,6 +18,13 @@ import {
   systemsInAudiencePool,
   type ProgramEligibility,
 } from '../domain/audiencePool';
+import { eventSpendPolicyOk } from '../domain/eventOps';
+import {
+  isChurchLeader,
+  isItoreroHighLeader,
+} from '../domain/churchLeadership';
+import { TASK_TEMPLATES } from '../domain/taskTemplates';
+import { pastoralOpsService } from './pastoralOpsService';
 import {
   findRole,
   legacyRoleKey,
@@ -212,11 +219,12 @@ export function canEnrollInProgram(
   });
 }
 
+/** @deprecated Prefer isItoreroHighLeader / isChurchLeader — kept for call sites. */
 export function isChurchLeadership(roles: SystemRole[]): boolean {
-  return (
-    roles.includes('CHURCH_LEADER') || roles.includes('ASSISTANT_PASTOR')
-  );
+  return isItoreroHighLeader(roles);
 }
+
+export { isChurchLeader, isItoreroHighLeader };
 
 export const missionService = {
   canManageBoard(positions: Position[], systemId: SystemId) {
@@ -365,8 +373,53 @@ export const missionService = {
   updateProgram(id: string, patch: Partial<Program>): Program | null {
     const i = PROGRAMS.findIndex((p) => p.id === id);
     if (i < 0) return null;
-    PROGRAMS[i] = { ...PROGRAMS[i], ...patch, id };
+    const prev = PROGRAMS[i];
+    if (prev.closeout && patch.closeout && patch.closeout !== prev.closeout) {
+      /* Immutable close-out — keep archived snapshot forever. */
+      const { closeout: _ignored, ...rest } = patch;
+      PROGRAMS[i] = { ...prev, ...rest, id, closeout: prev.closeout };
+      return PROGRAMS[i];
+    }
+    PROGRAMS[i] = { ...prev, ...patch, id };
     return PROGRAMS[i];
+  },
+
+  upsertProgramObjective(
+    programId: string,
+    objective: import('../domain/impact').ProgramObjective,
+  ): { ok: boolean; reason?: string } {
+    const p = this.getProgram(programId);
+    if (!p) return { ok: false, reason: 'Program not found' };
+    const title = objective.title.trim();
+    if (!title) return { ok: false, reason: 'Title required' };
+    const list = [...(p.objectives ?? [])];
+    const idx = list.findIndex((o) => o.id === objective.id);
+    const next = { ...objective, title };
+    if (idx >= 0) list[idx] = next;
+    else list.push(next);
+    this.updateProgram(programId, { objectives: list });
+    return { ok: true };
+  },
+
+  recordImpactValue(
+    programId: string,
+    objectiveId: string,
+    value: import('../domain/impact').ImpactValue,
+  ): { ok: boolean; reason?: string } {
+    const p = this.getProgram(programId);
+    if (!p) return { ok: false, reason: 'Program not found' };
+    if (!(p.objectives ?? []).some((o) => o.id === objectiveId)) {
+      return { ok: false, reason: 'Objective not found' };
+    }
+    const objectives = (p.objectives ?? []).map((o) => {
+      if (o.id !== objectiveId) return o;
+      return {
+        ...o,
+        values: [...(o.values ?? []), value],
+      };
+    });
+    this.updateProgram(programId, { objectives });
+    return { ok: true };
   },
 
   publishProgram(id: string): Program | null {
@@ -388,8 +441,8 @@ export const missionService = {
     approverPersonId: string,
     roles: SystemRole[],
   ): { ok: boolean; reason?: string; program?: Program } {
-    if (!isChurchLeadership(roles)) {
-      return { ok: false, reason: 'Church Leader (or Assistant Pastor) must approve' };
+    if (!isChurchLeader(roles)) {
+      return { ok: false, reason: 'Church Leader must approve' };
     }
     const p = this.getProgram(id);
     if (!p) return { ok: false, reason: 'Program not found' };
@@ -481,6 +534,7 @@ export const missionService = {
         closedByPersonId: string;
       };
       forceClose?: boolean;
+      forceReason?: string;
       usedCost?: number;
     },
   ): { ok: boolean; reason?: string; program?: Program } {
@@ -504,12 +558,29 @@ export const missionService = {
         reason: 'Close-out required (work + money summary and leftover)',
       };
     }
-    if (!deliveryReadyToClose(live) && !opts.forceClose) {
-      const open = requiredDeliveryOpen(live);
+    const openAdv = openAdvances(live);
+    const needsForce = !deliveryReadyToClose(live) || openAdv.length > 0;
+    if (needsForce && !opts.forceClose) {
+      if (!deliveryReadyToClose(live)) {
+        const open = requiredDeliveryOpen(live);
+        return {
+          ok: false,
+          reason: `${open.length} required delivery item(s) still open — finish, waive, or force`,
+        };
+      }
       return {
         ok: false,
-        reason: `${open.length} required delivery item(s) still open — finish, waive, or force`,
+        reason: `${openAdv.length} open advance(s) must be retired — or force close`,
       };
+    }
+    if (opts.forceClose && needsForce) {
+      const reason = (opts.forceReason ?? opts.closeout.forceReason ?? '').trim();
+      if (reason.length < 8) {
+        return {
+          ok: false,
+          reason: 'Force close requires a reason (at least 8 characters)',
+        };
+      }
     }
     const used =
       opts.usedCost !== undefined
@@ -517,14 +588,25 @@ export const missionService = {
         : live.usedCost !== undefined
           ? live.usedCost
           : 0;
+    const forceReason =
+      opts.forceClose && needsForce
+        ? (opts.forceReason ?? opts.closeout.forceReason ?? '').trim()
+        : undefined;
     const closeout: MissionCloseout = {
       ...opts.closeout,
+      forceReason,
       closedAt: new Date().toISOString(),
       plannedCostSnapshot: live.plannedCost,
       usedCostSnapshot: used,
       confirmedFundingSnapshot: (live.fundingPlan ?? [])
         .filter((f) => f.status === 'CONFIRMED')
         .reduce((s, f) => s + (Number(f.amount) || 0), 0),
+      participantsServedSnapshot: this.listEnrollments(id).filter(
+        (e) =>
+          e.status === 'ACTIVE' ||
+          e.status === 'COMPLETED' ||
+          e.status === 'ENDED',
+      ).length,
     };
     const today = new Date().toISOString().slice(0, 10);
     for (const e of PROGRAM_ENROLLMENTS) {
@@ -679,6 +761,8 @@ export const missionService = {
   completeEnrollment(input: {
     enrollmentId: string;
     issueCertificate?: boolean;
+    actorPersonId?: string;
+    roles?: SystemRole[];
     nextSteps?: {
       addMembershipType?: MembershipType;
       membershipLabel?: string;
@@ -690,6 +774,16 @@ export const missionService = {
     if (e.status !== 'ACTIVE') return { ok: false, reason: 'Not an active enrollment' };
     const program = this.getProgram(e.programId);
     if (!program) return { ok: false, reason: 'Program not found' };
+
+    if (input.nextSteps?.updateBaptism) {
+      if (!pastoralOpsService.baptismNameConfirmed(e.personId)) {
+        return {
+          ok: false,
+          reason:
+            'Church Leader must confirm this baptism name on the pathway list before the rite is recorded',
+        };
+      }
+    }
 
     const today = new Date().toISOString().slice(0, 10);
     e.status = 'COMPLETED';
@@ -748,6 +842,8 @@ export const missionService = {
     startsAt: string;
     endsAt?: string;
     location?: string;
+    seriesId?: string;
+    seriesLabel?: string;
   }): { ok: boolean; reason?: string; activity?: Activity } {
     const p = this.getProgram(input.programId);
     if (!p) return { ok: false, reason: 'Program not found' };
@@ -761,6 +857,8 @@ export const missionService = {
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       location: input.location,
+      seriesId: input.seriesId,
+      seriesLabel: input.seriesLabel,
     };
     ACTIVITIES.unshift(activity);
     return { ok: true, activity };
@@ -880,8 +978,20 @@ export const missionService = {
     projectId?: string;
     collaboratorSystemIds?: SystemId[];
     collaboratorPersonIds?: string[];
+    willSpend?: boolean;
+    plannedCost?: number;
   }): ChurchEvent {
     const beyond = input.beyondOwnerScope === true;
+    if (input.willSpend) {
+      const gate = eventSpendPolicyOk({
+        willSpend: true,
+        projectId: input.projectId,
+        plannedCost: input.plannedCost,
+      });
+      if (!gate.ok) {
+        throw new Error(gate.reason ?? 'Spend policy failed');
+      }
+    }
     const ownerOrg =
       input.orgUnitId ??
       systemsService.getById(input.ownerSystemId)?.orgUnitId;
@@ -911,6 +1021,8 @@ export const missionService = {
       seriesLabel: input.seriesLabel,
       programId: input.programId,
       projectId: input.projectId,
+      willSpend: input.willSpend,
+      plannedCost: input.plannedCost,
       collaboratorSystemIds: collabSys.length ? collabSys : undefined,
       collaboratorPersonIds: collabPeople.length ? collabPeople : undefined,
       lifecyclePhase: 'PREPARE',
@@ -962,16 +1074,24 @@ export const missionService = {
     const e = this.getEvent(eventId);
     if (!e) return { ok: false, reason: 'Event not found' };
     const patch: Partial<ChurchEvent> = { lifecyclePhase: phase };
-    if (phase === 'DELIVER' && e.status === 'CONFIRMED') {
-      /* keep CONFIRMED */
-    }
-    if (phase === 'CLOSE') {
-      patch.status = 'COMPLETED';
-    }
-    if (phase === 'PREPARE' && e.status === 'DRAFT') {
-      /* stay draft */
-    }
+    /* CLOSE = enter close-out; completion is explicit via completeEvent. */
     const event = this.updateEvent(eventId, patch);
+    return event ? { ok: true, event } : { ok: false, reason: 'Update failed' };
+  },
+
+  submitEvent(
+    id: string,
+  ): { ok: boolean; reason?: string; event?: ChurchEvent } {
+    const e = this.getEvent(id);
+    if (!e) return { ok: false, reason: 'Event not found' };
+    if (e.status !== 'DRAFT' && e.status !== 'PLANNED') {
+      return { ok: false, reason: 'Only draft/planned events can be submitted' };
+    }
+    const status = e.beyondOwnerScope ? 'PENDING_APPROVAL' : 'CONFIRMED';
+    const event = this.updateEvent(id, {
+      status,
+      lifecyclePhase: e.lifecyclePhase ?? 'PREPARE',
+    });
     return event ? { ok: true, event } : { ok: false, reason: 'Update failed' };
   },
 
@@ -1030,7 +1150,20 @@ export const missionService = {
   },
 
   completeEvent(id: string): ChurchEvent | null {
-    return this.updateEvent(id, { status: 'COMPLETED' });
+    const e = this.getEvent(id);
+    if (!e) return null;
+    const now = new Date().toISOString();
+    for (const r of EVENT_REGISTRATIONS) {
+      if (r.eventId === id && r.status === 'REGISTERED') {
+        r.status = 'NO_SHOW';
+        r.attendedAt = undefined;
+      }
+    }
+    return this.updateEvent(id, {
+      status: 'COMPLETED',
+      lifecyclePhase: 'CLOSE',
+      ...(e.endsAt ? {} : { endsAt: now }),
+    });
   },
 
   cancelEvent(id: string): ChurchEvent | null {
@@ -1038,7 +1171,90 @@ export const missionService = {
   },
 
   listEventRegistrations(eventId: string): EventRegistration[] {
+    this.expireStaleEventOffers(eventId);
     return EVENT_REGISTRATIONS.filter((r) => r.eventId === eventId);
+  },
+
+  /** Drop expired waitlist offers and free seats for FIFO promote. */
+  expireStaleEventOffers(eventId: string): number {
+    const now = Date.now();
+    let n = 0;
+    for (const r of EVENT_REGISTRATIONS) {
+      if (
+        r.eventId === eventId &&
+        r.status === 'REGISTERED' &&
+        r.offerExpiresAt &&
+        new Date(r.offerExpiresAt).getTime() < now
+      ) {
+        r.status = 'CANCELLED';
+        r.offerExpiresAt = undefined;
+        n += 1;
+      }
+    }
+    if (n > 0) this.promoteFromWaitlist(eventId);
+    return n;
+  },
+
+  promoteFromWaitlist(
+    eventId: string,
+  ): { ok: boolean; registration?: EventRegistration; reason?: string } {
+    const e = this.getEvent(eventId);
+    if (!e) return { ok: false, reason: 'Event not found' };
+    if (e.capacity == null) return { ok: false, reason: 'No capacity cap' };
+    const seated = EVENT_REGISTRATIONS.filter(
+      (r) =>
+        r.eventId === eventId &&
+        (r.status === 'REGISTERED' || r.status === 'ATTENDED'),
+    );
+    if (seated.length >= e.capacity) {
+      return { ok: false, reason: 'No free seats' };
+    }
+    const waiters = EVENT_REGISTRATIONS.filter(
+      (r) => r.eventId === eventId && r.status === 'WAITLIST',
+    ).sort((a, b) => a.registeredOn.localeCompare(b.registeredOn));
+    const next = waiters[0];
+    if (!next) return { ok: false, reason: 'Waitlist empty' };
+    const now = new Date();
+    next.status = 'REGISTERED';
+    next.promotedAt = now.toISOString();
+    next.offerExpiresAt = new Date(
+      now.getTime() + 48 * 3600 * 1000,
+    ).toISOString();
+    return { ok: true, registration: next };
+  },
+
+  cancelEventRegistration(input: {
+    eventId: string;
+    personId: string;
+  }): {
+    ok: boolean;
+    reason?: string;
+    registration?: EventRegistration;
+    promoted?: EventRegistration;
+  } {
+    const e = this.getEvent(input.eventId);
+    if (!e) return { ok: false, reason: 'Event not found' };
+    const reg = EVENT_REGISTRATIONS.find(
+      (r) =>
+        r.eventId === input.eventId &&
+        r.personId === input.personId &&
+        r.status !== 'CANCELLED',
+    );
+    if (!reg) return { ok: false, reason: 'Registration not found' };
+    if (reg.status === 'ATTENDED') {
+      return { ok: false, reason: 'Already attended — cannot cancel' };
+    }
+    const wasSeated =
+      reg.status === 'REGISTERED' || reg.status === 'WAITLIST';
+    const freedSeat = reg.status === 'REGISTERED';
+    reg.status = 'CANCELLED';
+    reg.offerExpiresAt = undefined;
+    let promoted: EventRegistration | undefined;
+    if (freedSeat && wasSeated) {
+      const p = this.promoteFromWaitlist(input.eventId);
+      if (p.ok) promoted = p.registration;
+    }
+    return { ok: true, registration: reg, promoted };
   },
 
   registerForEvent(input: {
@@ -1053,17 +1269,32 @@ export const missionService = {
     if (registrationModeOf(e) !== 'REGISTRATION_REQUIRED') {
       return { ok: false, reason: 'Announcement-only — no registration' };
     }
+    this.expireStaleEventOffers(input.eventId);
     const active = EVENT_REGISTRATIONS.filter(
       (r) =>
         r.eventId === input.eventId &&
         (r.status === 'REGISTERED' || r.status === 'ATTENDED'),
     );
-    const already = active.find((r) => r.personId === input.personId);
-    if (already) return { ok: false, reason: 'Already registered' };
+    const already = EVENT_REGISTRATIONS.find(
+      (r) =>
+        r.eventId === input.eventId &&
+        r.personId === input.personId &&
+        r.status !== 'CANCELLED',
+    );
+    if (already && already.status !== 'CANCELLED') {
+      return { ok: false, reason: 'Already registered' };
+    }
 
     let status: EventRegistrationStatus = 'REGISTERED';
     if (e.capacity != null && active.length >= e.capacity) {
       status = 'WAITLIST';
+    }
+    if (already) {
+      already.status = status;
+      already.registeredOn = new Date().toISOString().slice(0, 10);
+      already.offerExpiresAt = undefined;
+      already.promotedAt = undefined;
+      return { ok: true, registration: already };
     }
     const registration: EventRegistration = {
       id: nid('ereg'),
@@ -1302,10 +1533,10 @@ export const missionService = {
     _approverPersonId: string,
     roles: SystemRole[],
   ): { ok: boolean; reason?: string; project?: ChurchProject } {
-    if (!isChurchLeadership(roles)) {
+    if (!isChurchLeader(roles)) {
       return {
         ok: false,
-        reason: 'Church Leader (or Assistant Pastor) must approve',
+        reason: 'Church Leader must approve',
       };
     }
     const p = this.getProject(id);
@@ -1327,9 +1558,11 @@ export const missionService = {
 
   /**
    * PLANNED (setup) → ACTIVE when ready to run.
+   * Spend gate: willSpend && fundingGap > 0 requires forceSpendGap + reason.
    */
   startProject(
     id: string,
+    opts?: { forceSpendGap?: boolean; forceReason?: string },
   ): {
     ok: boolean;
     reason?: string;
@@ -1342,16 +1575,43 @@ export const missionService = {
     if (p.status !== 'PLANNED') {
       return { ok: false, reason: 'Only PLANNED projects can start running' };
     }
-    const project = this.updateProject(id, {
-      status: 'ACTIVE',
-      startDate: p.startDate ?? new Date().toISOString().slice(0, 10),
-    });
-    if (!project) return { ok: false, reason: 'Update failed' };
     const gap =
       (Number(p.plannedCost) || 0) -
       (p.fundingPlan ?? [])
         .filter((f) => f.status === 'CONFIRMED')
         .reduce((s, f) => s + (Number(f.amount) || 0), 0);
+    if (p.willSpend && gap > 0) {
+      if (!opts?.forceSpendGap) {
+        return {
+          ok: false,
+          reason: `Funding gap ${Math.round(gap)} RWF — confirm funding or force start with a reason`,
+          gap,
+        };
+      }
+      const reason = (opts.forceReason ?? '').trim();
+      if (reason.length < 8) {
+        return {
+          ok: false,
+          reason: 'Force start requires a reason (at least 8 characters)',
+          gap,
+        };
+      }
+    }
+    const project = this.updateProject(id, {
+      status: 'ACTIVE',
+      startDate: p.startDate ?? new Date().toISOString().slice(0, 10),
+      ...(opts?.forceSpendGap && gap > 0
+        ? {
+            outcomeNote: [
+              p.outcomeNote,
+              `Spend-gap override: ${opts.forceReason!.trim()}`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          }
+        : {}),
+    });
+    if (!project) return { ok: false, reason: 'Update failed' };
     const openReq = requiredDeliveryOpen(p).length;
     return {
       ok: true,
@@ -1427,7 +1687,13 @@ export const missionService = {
   ): ChurchProject | null {
     const i = PROJECTS.findIndex((p) => p.id === id);
     if (i < 0) return null;
-    PROJECTS[i] = { ...PROJECTS[i], ...patch, id };
+    const prev = PROJECTS[i];
+    if (prev.closeout && patch.closeout && patch.closeout !== prev.closeout) {
+      const { closeout: _ignored, ...rest } = patch;
+      PROJECTS[i] = { ...prev, ...rest, id, closeout: prev.closeout };
+      return PROJECTS[i];
+    }
+    PROJECTS[i] = { ...prev, ...patch, id };
     return PROJECTS[i];
   },
 
@@ -1560,6 +1826,7 @@ export const missionService = {
     opts?: {
       outcomeNote?: string;
       forceClose?: boolean;
+      forceReason?: string;
       usedCost?: number;
       closeout?: Omit<MissionCloseout, 'closedAt' | 'closedByPersonId'> & {
         closedByPersonId: string;
@@ -1602,20 +1869,38 @@ export const missionService = {
         reason: 'Close-out required (work + money summary and leftover)',
       };
     }
-    if (!deliveryReadyToClose(live) && !opts.forceClose) {
-      const openDel = requiredDeliveryOpen(live);
-      return {
-        ok: false,
-        reason: `${openDel.length} required delivery item(s) still open — finish, waive, or force`,
-      };
-    }
+    const openAdv = openAdvances(live);
     const open = this.openTasksForProject(id);
-    if (open.length > 0 && !opts?.forceClose) {
+    const needsForce =
+      !deliveryReadyToClose(live) || openAdv.length > 0 || open.length > 0;
+    if (needsForce && !opts.forceClose) {
+      if (!deliveryReadyToClose(live)) {
+        const openDel = requiredDeliveryOpen(live);
+        return {
+          ok: false,
+          reason: `${openDel.length} required delivery item(s) still open — finish, waive, or force`,
+        };
+      }
+      if (openAdv.length > 0) {
+        return {
+          ok: false,
+          reason: `${openAdv.length} open advance(s) must be retired — or force close`,
+        };
+      }
       return {
         ok: false,
         reason: `${open.length} open task(s) — finish/cancel them or force close`,
         openTasks: open.length,
       };
+    }
+    if (opts.forceClose && needsForce) {
+      const reason = (opts.forceReason ?? opts.closeout.forceReason ?? '').trim();
+      if (reason.length < 8) {
+        return {
+          ok: false,
+          reason: 'Force close requires a reason (at least 8 characters)',
+        };
+      }
     }
     const used =
       opts.usedCost !== undefined
@@ -1623,8 +1908,13 @@ export const missionService = {
         : live.usedCost !== undefined
           ? live.usedCost
           : 0;
+    const forceReason =
+      opts.forceClose && needsForce
+        ? (opts.forceReason ?? opts.closeout.forceReason ?? '').trim()
+        : undefined;
     const closeout: MissionCloseout = {
       ...opts.closeout,
+      forceReason,
       closedAt: new Date().toISOString(),
       plannedCostSnapshot: live.plannedCost,
       usedCostSnapshot: used,
@@ -1772,6 +2062,9 @@ export const missionService = {
     description?: string;
     ownerPersonId: string;
     helperPersonIds?: string[];
+    accountablePersonId?: string;
+    watcherPersonIds?: string[];
+    dependsOn?: string[];
     createdByPersonId?: string;
     systemId: SystemId;
     visibility?: MissionVisibility;
@@ -1784,12 +2077,22 @@ export const missionService = {
     const helpers = (input.helperPersonIds ?? []).filter(
       (id) => id && id !== input.ownerPersonId,
     );
+    const watchers = (input.watcherPersonIds ?? []).filter(
+      (id) =>
+        id &&
+        id !== input.ownerPersonId &&
+        id !== input.accountablePersonId &&
+        !helpers.includes(id),
+    );
     const t: WorkTask = {
       id: nid('task'),
       title: input.title,
       description: input.description,
       ownerPersonId: input.ownerPersonId,
       helperPersonIds: helpers.length ? helpers : undefined,
+      accountablePersonId: input.accountablePersonId || undefined,
+      watcherPersonIds: watchers.length ? watchers : undefined,
+      dependsOn: input.dependsOn?.length ? [...input.dependsOn] : undefined,
       createdByPersonId: input.createdByPersonId,
       contextType: input.contextType ?? 'NONE',
       contextId: input.contextId,
@@ -1837,7 +2140,50 @@ export const missionService = {
   startTask(id: string): WorkTask | null {
     const t = this.getTask(id);
     if (!t || t.status !== 'TODO') return null;
+    const blocked = this.openDependencyTitles(id);
+    if (blocked.length) {
+      /* Soft gate: allow start but caller can surface warning via peek. */
+    }
     return this.updateTask(id, { status: 'IN_PROGRESS' });
+  },
+
+  /** Titles of incomplete dependsOn tasks (soft critical). */
+  openDependencyTitles(taskId: string): string[] {
+    const t = this.getTask(taskId);
+    if (!t?.dependsOn?.length) return [];
+    return t.dependsOn
+      .map((id) => this.getTask(id))
+      .filter(
+        (d): d is WorkTask =>
+          !!d && d.status !== 'DONE' && d.status !== 'CANCELLED',
+      )
+      .map((d) => d.title);
+  },
+
+  isSoftCritical(taskId: string): boolean {
+    return this.openDependencyTitles(taskId).length > 0;
+  },
+
+  /** Restore a just-completed task (undo toast). */
+  reopenTask(
+    id: string,
+    prior: {
+      status: WorkTask['status'];
+      endDate?: string;
+      outcomeNote?: string;
+      grantsSystemAccess?: boolean;
+      accessRevokedAt?: string;
+    },
+  ): WorkTask | null {
+    const t = this.getTask(id);
+    if (!t || t.status !== 'DONE') return null;
+    return this.updateTask(id, {
+      status: prior.status === 'DONE' ? 'IN_PROGRESS' : prior.status,
+      endDate: prior.endDate,
+      outcomeNote: prior.outcomeNote,
+      grantsSystemAccess: prior.grantsSystemAccess ?? false,
+      accessRevokedAt: prior.accessRevokedAt,
+    });
   },
 
   /**
@@ -1934,6 +2280,16 @@ export const missionService = {
     id: string,
     patch: Partial<MissionStewardship>,
   ): { ok: boolean; reason?: string } {
+    const existing = this.stewardshipOf(kind, id);
+    if (!existing) {
+      return {
+        ok: false,
+        reason: kind === 'PROGRAM' ? 'Program not found' : 'Project not found',
+      };
+    }
+    if (existing.closeout && patch.closeout) {
+      return { ok: false, reason: 'Close-out is immutable' };
+    }
     if (kind === 'PROGRAM') {
       const p = this.updateProgram(id, patch);
       return p ? { ok: true } : { ok: false, reason: 'Program not found' };
@@ -2208,16 +2564,119 @@ export const missionService = {
     id: string,
     lineId: string,
     frozen: boolean,
+    opts?: { amendNote?: string },
   ): { ok: boolean; reason?: string } {
     const s = this.stewardshipOf(kind, id);
     if (!s) return { ok: false, reason: 'Not found' };
-    const lines = (s.budgetLines ?? []).map((l) =>
-      l.id === lineId ? { ...l, frozen } : l,
-    );
     if (!(s.budgetLines ?? []).some((l) => l.id === lineId)) {
       return { ok: false, reason: 'Budget line not found' };
     }
+    if (!frozen) {
+      const note = (opts?.amendNote ?? '').trim();
+      if (note.length < 4) {
+        return {
+          ok: false,
+          reason: 'Unfreeze requires a short amend note',
+        };
+      }
+    }
+    const lines = (s.budgetLines ?? []).map((l) =>
+      l.id === lineId
+        ? {
+            ...l,
+            frozen,
+            amendNote: !frozen
+              ? (opts?.amendNote ?? '').trim()
+              : l.amendNote,
+          }
+        : l,
+    );
     return this.patchStewardship(kind, id, { budgetLines: lines });
+  },
+
+  addBlocker(
+    kind: MissionStewardKind,
+    id: string,
+    input: {
+      title: string;
+      severity: 'BLOCKER' | 'RISK';
+      ownerPersonId: string;
+      deliveryItemId?: string;
+      taskId?: string;
+      note?: string;
+    },
+  ): { ok: boolean; reason?: string; blocker?: import('../domain/deliveryRisk').MissionBlocker } {
+    const s = this.stewardshipOf(kind, id);
+    if (!s) return { ok: false, reason: 'Not found' };
+    const title = input.title.trim();
+    if (!title) return { ok: false, reason: 'Title required' };
+    const blocker: import('../domain/deliveryRisk').MissionBlocker = {
+      id: nid('blk'),
+      title,
+      severity: input.severity,
+      status: 'OPEN',
+      ownerPersonId: input.ownerPersonId,
+      createdAt: new Date().toISOString(),
+      deliveryItemId: input.deliveryItemId,
+      taskId: input.taskId,
+      note: input.note?.trim() || undefined,
+    };
+    const blockers = [...(s.blockers ?? []), blocker];
+    const r = this.patchStewardship(kind, id, { blockers });
+    return r.ok ? { ok: true, blocker } : r;
+  },
+
+  setBlockerStatus(
+    kind: MissionStewardKind,
+    id: string,
+    blockerId: string,
+    status: 'OPEN' | 'MITIGATING' | 'RESOLVED',
+  ): { ok: boolean; reason?: string } {
+    const s = this.stewardshipOf(kind, id);
+    if (!s) return { ok: false, reason: 'Not found' };
+    const blockers = (s.blockers ?? []).map((b) =>
+      b.id === blockerId
+        ? {
+            ...b,
+            status,
+            resolvedAt:
+              status === 'RESOLVED' ? new Date().toISOString() : undefined,
+          }
+        : b,
+    );
+    if (!(s.blockers ?? []).some((b) => b.id === blockerId)) {
+      return { ok: false, reason: 'Blocker not found' };
+    }
+    return this.patchStewardship(kind, id, { blockers });
+  },
+
+  spawnTasksFromTemplate(input: {
+    templateId: string;
+    ownerPersonId: string;
+    createdByPersonId: string;
+    systemId: SystemId;
+    contextType: WorkTask['contextType'];
+    contextId: string;
+    contextLabel?: string;
+    accountablePersonId?: string;
+  }): { ok: boolean; reason?: string; tasks?: WorkTask[] } {
+    const tpl = TASK_TEMPLATES.find((t) => t.id === input.templateId);
+    if (!tpl) return { ok: false, reason: 'Unknown template' };
+    const tasks = tpl.items.map((item) =>
+      this.createTask({
+        title: item.title,
+        description: item.description,
+        ownerPersonId: input.ownerPersonId,
+        accountablePersonId: input.accountablePersonId,
+        createdByPersonId: input.createdByPersonId,
+        systemId: input.systemId,
+        contextType: input.contextType,
+        contextId: input.contextId,
+        contextLabel: input.contextLabel,
+        visibility: 'CHURCH',
+      }),
+    );
+    return { ok: true, tasks };
   },
 
   issueAdvance(
