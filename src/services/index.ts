@@ -24,5 +24,16 @@ export { reportsService, downloadText } from './reportsService';
 export { reportPrefs } from './reportPrefs';
 export { orgService, systemsService } from './orgService';
 export { participationService } from './participationService';
+export {
+  buildParticipationWork,
+  kindLabel,
+} from './participationWork';
+export type {
+  ParticipationSystemWork,
+  ParticipationWorkItem,
+  ParticipationWorkKind,
+} from './participationWork';
+export { buildPersonParticipationPlaces } from './personParticipation';
+export type { PersonPlaceParticipation } from './personParticipation';
 export { protocolService } from './protocolService';
 export { openSystem, openSystemUrlInNewTab, systemHomePath } from './ssoService';
