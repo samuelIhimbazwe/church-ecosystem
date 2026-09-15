@@ -12,6 +12,9 @@ export function setActiveChoirOrgUnitId(orgUnitId: string | null): void {
 }
 
 export function getActiveChoirOrgUnitId(): string | null {
+  if (activeChoirOrgUnitId) return activeChoirOrgUnitId;
+  // Fall back to session so office/roster resolve before ChoirShell effects run.
+  activeChoirOrgUnitId = readSession()?.activeChoirOrgUnitId ?? null;
   return activeChoirOrgUnitId;
 }
 
