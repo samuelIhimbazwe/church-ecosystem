@@ -211,7 +211,24 @@ export let MF_INCOME: Array<MinistryIncomeRecord & { systemId: SystemId }> = [];
 export let MF_EXPENSES: Array<
   MinistryExpenseRecord & { systemId: SystemId }
 > = [];
-export let MF_ASSETS: Array<MinistryAsset & { systemId: SystemId }> = [];
+export let MF_ASSETS: Array<MinistryAsset & { systemId: SystemId }> =
+  FINANCE_KIT_SYSTEM_IDS.map((systemId) => ({
+    id: `asset-${systemId.replace('sys-', '')}-kit`,
+    systemId,
+    name: 'Ministry kit / materials',
+    category: 'Equipment',
+    value: 150_000,
+    acquiredOn: '2026-01-15',
+    status: 'ACTIVE' as const,
+  }));
 export let MF_LIABILITIES: Array<
   MinistryLiability & { systemId: SystemId }
-> = [];
+> = FINANCE_KIT_SYSTEM_IDS.map((systemId) => ({
+  id: `liab-${systemId.replace('sys-', '')}-kit`,
+  systemId,
+  name: 'Outstanding supplier balance',
+  amount: 40_000,
+  dueDate: '2026-10-31',
+  status: 'OPEN' as const,
+  notes: 'Seed sample — close when paid',
+}));
