@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { StatusPill } from '../components/ui/StatusPill';
+import { PageHead } from '../components/ui/FilterBar';
+import { ForbiddenState, StatusPill } from '../components/ui/StatusPill';
+import type { SystemId } from '../domain/types';
+import { isCatechist, isChurchLeader } from '../domain/churchLeadership';
 import { missionService, systemsService } from '../services';
+import { pastoralOpsService } from '../services/pastoralOpsService';
 
 type CalItem = ReturnType<typeof missionService.calendar>[number];
 
@@ -27,19 +31,47 @@ function sameDay(a: Date, b: Date) {
   );
 }
 
-function itemHref(item: CalItem) {
-  if (item.kind === 'EVENT') return `/events/${item.id}`;
-  if (item.programId) return `/programs/${item.programId}`;
-  return '/programs';
+function itemHref(item: CalItem, basePath: string) {
+  const root = basePath.replace(/\/$/, '');
+  if (item.kind === 'EVENT') {
+    return root ? `${root}/events/${item.id}` : `/events/${item.id}`;
+  }
+  if (item.programId) {
+    return root
+      ? `${root}/programs/${item.programId}`
+      : `/programs/${item.programId}`;
+  }
+  return root ? `${root}/programs` : '/programs';
 }
 
-export function CalendarPage() {
-  const { can, account, positions } = useAuth();
+function kindLabel(kind: string) {
+  if (kind === 'EVENT') return 'Event';
+  if (kind === 'ACTIVITY') return 'Activity';
+  return kind.replace(/_/g, ' ').toLowerCase();
+}
+
+export function CalendarPage({
+  systemId = 'sys-main',
+  basePath = '',
+  title,
+}: {
+  systemId?: SystemId;
+  basePath?: string;
+  title?: string;
+} = {}) {
+  const { can, account, positions, roles } = useAuth();
   const canView = can('PROGRAM', 'VIEW') || can('EVENT', 'VIEW');
   const [cursor, setCursor] = useState(() => new Date(2026, 8, 1)); // Sep 2026 seed
   const [mode, setMode] = useState<'month' | 'list'>('month');
+  const [tick, setTick] = useState(0);
+  const canResolveConflicts =
+    isCatechist(roles) || isChurchLeader(roles);
+  const conflicts = useMemo(
+    () => pastoralOpsService.listCalendarConflicts(),
+    [tick],
+  );
 
-  const items = missionService.calendar('sys-main', {
+  const items = missionService.calendar(systemId, {
     personId: account?.personId,
     positions,
     canEnterOwner: true,
@@ -65,44 +97,113 @@ export function CalendarPage() {
     return map;
   }, [items]);
 
+  /** Nested ministry calendars keep an in-page title; Main uses AppShell. */
+  const nestedTitle = title;
+  const programsHref = basePath
+    ? `${basePath.replace(/\/$/, '')}/programs`
+    : '/programs';
+  const eventsHref = basePath
+    ? `${basePath.replace(/\/$/, '')}/events`
+    : '/events';
+  const tasksHref = basePath
+    ? `${basePath.replace(/\/$/, '')}/tasks`
+    : '/tasks';
+
   if (!canView) {
     return (
-      <div className="panel">
-        <h2>Calendar</h2>
-        <p className="muted">No program/event view rights.</p>
-      </div>
+      <ForbiddenState
+        resource="EVENT"
+        action="VIEW"
+        detail="You don’t have calendar access for this system."
+        recovery={
+          <Link to="/" className="btn secondary">
+            Back home
+          </Link>
+        }
+      />
     );
   }
 
+  const modeToggle = (
+    <div className="row">
+      <button
+        type="button"
+        className={`btn sm ${mode === 'month' ? '' : 'ghost'}`}
+        onClick={() => setMode('month')}
+      >
+        Month
+      </button>
+      <button
+        type="button"
+        className={`btn sm ${mode === 'list' ? '' : 'ghost'}`}
+        onClick={() => setMode('list')}
+      >
+        List
+      </button>
+    </div>
+  );
+
   return (
-    <div className="stack">
-      <div className="panel">
-        <div className="page-head">
-          <div>
-            <h2>Church calendar</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              General church activities and events only — ministry-private stays
-              in peer systems.
-            </p>
-          </div>
-          <div className="row">
-            <button
-              type="button"
-              className={`btn ${mode === 'month' ? '' : 'ghost'}`}
-              onClick={() => setMode('month')}
-            >
-              Month
-            </button>
-            <button
-              type="button"
-              className={`btn ${mode === 'list' ? '' : 'ghost'}`}
-              onClick={() => setMode('list')}
-            >
-              List
-            </button>
-          </div>
+    <div className="list-page">
+      <div className="list-chrome">
+        {nestedTitle ? (
+          <PageHead title={nestedTitle} actions={modeToggle} />
+        ) : (
+          <PageHead actions={modeToggle} />
+        )}
+        <div className="list-meta">
+          <Link to={programsHref} className="badge">
+            Programs
+          </Link>
+          <Link to={eventsHref} className="badge">
+            Events
+          </Link>
+          <Link to={tasksHref} className="badge">
+            Tasks
+          </Link>
         </div>
       </div>
+
+      {systemId === 'sys-main' && conflicts.length > 0 ? (
+        <div className="panel stack" style={{ marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0 }}>Date conflicts</h3>
+          <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
+            Same day is not always a conflict — ministries try first; catechist
+            resolves if they fail.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+            {conflicts.map((c) => (
+              <li key={c.id}>
+                <strong>{c.title}</strong> · {c.date} · {c.status}
+                {c.notes ? (
+                  <div className="muted" style={{ fontSize: '0.85rem' }}>
+                    {c.notes}
+                  </div>
+                ) : null}
+                {canResolveConflicts &&
+                  account &&
+                  c.status !== 'RESOLVED' && (
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ marginLeft: '0.35rem' }}
+                      onClick={() => {
+                        pastoralOpsService.resolveCalendarConflict(
+                          c.id,
+                          account.personId,
+                          'Resolved by catechist / Leader',
+                        );
+                        setTick((t) => t + 1);
+                      }}
+                    >
+                      Resolve
+                    </button>
+                  )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {mode === 'month' && (
         <div className="panel">
@@ -146,7 +247,7 @@ export function CalendarPage() {
                     {dayItems.slice(0, 3).map((item) => (
                       <Link
                         key={`${item.kind}-${item.id}`}
-                        to={itemHref(item)}
+                        to={itemHref(item, basePath)}
                         className={`cal-chip ${item.kind === 'EVENT' ? 'event' : 'activity'}`}
                         title={item.title}
                       >
@@ -168,57 +269,52 @@ export function CalendarPage() {
 
       {mode === 'list' && (
         <div className="panel">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Kind</th>
-                <th>Title</th>
-                <th>System</th>
-                <th>Meta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
+          {items.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              Nothing on the calendar yet.
+            </p>
+          ) : (
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="muted">
-                    No upcoming items
-                  </td>
+                  <th>When</th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Where</th>
                 </tr>
-              ) : (
-                items.map((item) => (
+              </thead>
+              <tbody>
+                {items.map((item) => (
                   <tr key={`${item.kind}-${item.id}`}>
-                    <td>{new Date(item.startsAt).toLocaleString()}</td>
+                    <td>
+                      {new Date(item.startsAt).toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </td>
                     <td>
                       <StatusPill
                         tone={item.kind === 'EVENT' ? 'info' : 'neutral'}
                       >
-                        {item.kind}
+                        {kindLabel(item.kind)}
                       </StatusPill>
                     </td>
                     <td>
-                      <Link to={itemHref(item)}>
-                        <strong>{item.title}</strong>
-                      </Link>
+                      <Link to={itemHref(item, basePath)}>{item.title}</Link>
                     </td>
-                    <td>
+                    <td className="muted">
                       {systemsService.getById(item.systemId)?.shortName ??
-                        item.systemId}
+                        'Main Church'}
                     </td>
-                    <td className="muted">{item.meta}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
-
-      <div className="row">
-        <Link to="/programs">Programs</Link>
-        <Link to="/events">Events</Link>
-        <Link to="/tasks">Tasks</Link>
-      </div>
     </div>
   );
 }
