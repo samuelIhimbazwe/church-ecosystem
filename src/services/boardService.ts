@@ -3,6 +3,8 @@ import { isChurchLeader } from '../domain/churchLeadership';
 import type {
   BoardAgendaItem,
   BoardDecision,
+  BoardFollowUpUpdate,
+  BoardFollowUpUpdateKind,
   BoardMeeting,
   BoardMeetingStatus,
   Position,
@@ -58,6 +60,12 @@ function ensureAgendaItems(m: BoardMeeting): BoardAgendaItem[] {
   return m.agendaItems;
 }
 
+function findDecision(meetingId: string, decisionId: string) {
+  const m = BOARD_MEETINGS.find((x) => x.id === meetingId);
+  const d = m?.decisions.find((x) => x.id === decisionId);
+  return { meeting: m ?? null, decision: d ?? null };
+}
+
 export const boardService = {
   list() {
     return [...BOARD_MEETINGS].sort((a, b) =>
@@ -75,6 +83,15 @@ export const boardService = {
         .filter((d) => d.status === 'OPEN')
         .map((d) => ({ meeting: m, decision: d })),
     );
+  },
+
+  /** Resolve a decision (open or done) by id across meetings. */
+  getFollowUp(decisionId: string) {
+    for (const meeting of BOARD_MEETINGS) {
+      const decision = meeting.decisions.find((d) => d.id === decisionId);
+      if (decision) return { meeting, decision };
+    }
+    return null;
   },
 
   agendaItems(meetingId: string): BoardAgendaItem[] {
@@ -144,6 +161,7 @@ export const boardService = {
     itemId: string,
     actorPersonId: string,
     roles: SystemRole[],
+    note?: string,
   ): { ok: boolean; reason?: string } {
     if (!isChurchLeader(roles)) {
       return { ok: false, reason: 'Only Church Leader can freeze for Board' };
@@ -152,8 +170,13 @@ export const boardService = {
     if (!m) return { ok: false, reason: 'Meeting not found' };
     const item = ensureAgendaItems(m).find((a) => a.id === itemId);
     if (!item) return { ok: false, reason: 'Agenda item not found' };
+    if (item.state === 'DECIDED') {
+      return { ok: false, reason: 'Already decided' };
+    }
     item.state = 'FROZEN';
-    item.notes = `Frozen by Leader`;
+    item.notes =
+      note?.trim() ||
+      `Frozen for Board by Leader — wait for the meeting; do not act alone.`;
     void actorPersonId;
     return { ok: true };
   },
@@ -164,7 +187,7 @@ export const boardService = {
     actorPersonId: string,
     roles: SystemRole[],
     summary?: string,
-  ): { ok: boolean; reason?: string } {
+  ): { ok: boolean; reason?: string; decisionId?: string } {
     if (!isChurchLeader(roles)) {
       return { ok: false, reason: 'Only Church Leader can decide alone' };
     }
@@ -172,16 +195,23 @@ export const boardService = {
     if (!m) return { ok: false, reason: 'Meeting not found' };
     const item = ensureAgendaItems(m).find((a) => a.id === itemId);
     if (!item) return { ok: false, reason: 'Agenda item not found' };
+    if (item.state === 'DECIDED') {
+      return { ok: false, reason: 'Already decided' };
+    }
+    const decisionSummary =
+      summary?.trim() || `Decided by Church Leader: ${item.text}`;
     const d = this.addDecision(meetingId, {
-      summary: summary?.trim() || `Decided: ${item.text}`,
+      summary: decisionSummary,
       ownerPersonId: actorPersonId,
       status: 'DONE',
+      resultSummary: decisionSummary,
     });
     item.state = 'DECIDED';
     item.decidedAt = new Date().toISOString();
     item.decidedByPersonId = actorPersonId;
     item.decisionId = d?.id;
-    return { ok: true };
+    item.notes = `Decided between meetings by Church Leader (Board not required for this item).`;
+    return { ok: true, decisionId: d?.id };
   },
 
   markHeld(id: string, notes?: string): BoardMeeting | null {
@@ -214,17 +244,86 @@ export const boardService = {
       ownerPersonId: input.ownerPersonId,
       dueDate: input.dueDate,
       followUpTaskId: input.followUpTaskId,
+      progressUpdates: input.progressUpdates,
+      resultSummary: input.resultSummary,
       status: input.status ?? 'OPEN',
     };
     m.decisions.push(d);
     return d;
   },
 
-  completeDecision(meetingId: string, decisionId: string): boolean {
-    const m = BOARD_MEETINGS.find((x) => x.id === meetingId);
-    const d = m?.decisions.find((x) => x.id === decisionId);
-    if (!d) return false;
-    d.status = 'DONE';
-    return true;
+  /**
+   * Owner (or Church Leader) posts progress / interim result / blocker on a follow-up.
+   */
+  addFollowUpUpdate(
+    meetingId: string,
+    decisionId: string,
+    input: {
+      byPersonId: string;
+      note: string;
+      kind?: BoardFollowUpUpdateKind;
+    },
+  ): { ok: boolean; reason?: string; update?: BoardFollowUpUpdate } {
+    const { decision } = findDecision(meetingId, decisionId);
+    if (!decision) return { ok: false, reason: 'Follow-up not found' };
+    if (decision.status !== 'OPEN') {
+      return { ok: false, reason: 'Follow-up already closed' };
+    }
+    const note = input.note.trim();
+    if (!note) return { ok: false, reason: 'Add a progress note' };
+    const update: BoardFollowUpUpdate = {
+      id: newId('bdu'),
+      at: new Date().toISOString(),
+      byPersonId: input.byPersonId,
+      note,
+      kind: input.kind ?? 'PROGRESS',
+    };
+    decision.progressUpdates = [...(decision.progressUpdates ?? []), update];
+    return { ok: true, update };
+  },
+
+  /**
+   * Close a follow-up after reviewing progress. Requires progress notes or a result summary.
+   */
+  completeDecision(
+    meetingId: string,
+    decisionId: string,
+    input?: {
+      actorPersonId?: string;
+      resultSummary?: string;
+      forceWithoutProgress?: boolean;
+    },
+  ): { ok: boolean; reason?: string } {
+    const { decision } = findDecision(meetingId, decisionId);
+    if (!decision) return { ok: false, reason: 'Follow-up not found' };
+    if (decision.status !== 'OPEN') {
+      return { ok: false, reason: 'Already done' };
+    }
+    const result = input?.resultSummary?.trim();
+    const hasProgress = (decision.progressUpdates?.length ?? 0) > 0;
+    if (!hasProgress && !result && !input?.forceWithoutProgress) {
+      return {
+        ok: false,
+        reason:
+          'Review progress first — ask the owner for an update, or record the result when closing',
+      };
+    }
+    if (result) {
+      decision.resultSummary = result;
+      decision.progressUpdates = [
+        ...(decision.progressUpdates ?? []),
+        {
+          id: newId('bdu'),
+          at: new Date().toISOString(),
+          byPersonId: input?.actorPersonId ?? decision.ownerPersonId ?? 'system',
+          note: result,
+          kind: 'RESULT',
+        },
+      ];
+    }
+    decision.status = 'DONE';
+    decision.completedAt = new Date().toISOString();
+    decision.completedByPersonId = input?.actorPersonId;
+    return { ok: true };
   },
 };
