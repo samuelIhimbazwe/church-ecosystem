@@ -33,7 +33,8 @@ export type IconName =
   | 'building'
   | 'wallet'
   | 'layers'
-  | 'hand';
+  | 'hand'
+  | 'menu';
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (
@@ -219,6 +220,11 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 11V7.5a1.5 1.5 0 0 1 3 0V11" />
       <path d="M11 10.5V6.5a1.5 1.5 0 0 1 3 0V11" />
       <path d="M14 10V7.8a1.5 1.5 0 0 1 3 0V13c0 3.5-2.2 6-5.5 6H12a5 5 0 0 1-5-5v-3.5a1.5 1.5 0 0 1 3 0V11" />
+    </>
+  ),
+  menu: (
+    <>
+      <path d="M5 7h14M5 12h14M5 17h14" />
     </>
   ),
 };
