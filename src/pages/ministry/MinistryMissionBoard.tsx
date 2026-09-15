@@ -2,6 +2,12 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { Drawer } from '../../components/ui/Drawer';
+import {
+  CheckboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../../components/ui/Field';
 import { FilterBar, PageHead } from '../../components/ui/FilterBar';
 import {
   EmptyState,
@@ -303,19 +309,20 @@ export function MinistryMissionBoard({
 
   function onShare(e: FormEvent) {
     e.preventDefault();
-    if (!gate(shareKind) || !shareResourceId || !sharePersonId) return;
+    const resourceId = shareResourceId || selectableResources[0]?.id || '';
+    if (!gate(shareKind) || !resourceId || !sharePersonId) return;
     if (shareKind === 'PROGRAM') {
-      missionService.updateProgram(shareResourceId, { visibility: 'SELECTIVE' });
+      missionService.updateProgram(resourceId, { visibility: 'SELECTIVE' });
     } else if (shareKind === 'EVENT') {
-      missionService.updateEvent(shareResourceId, { visibility: 'SELECTIVE' });
+      missionService.updateEvent(resourceId, { visibility: 'SELECTIVE' });
     } else if (shareKind === 'PROJECT') {
-      missionService.updateProject(shareResourceId, { visibility: 'SELECTIVE' });
+      missionService.updateProject(resourceId, { visibility: 'SELECTIVE' });
     } else {
-      missionService.updateTask(shareResourceId, { visibility: 'SELECTIVE' });
+      missionService.updateTask(resourceId, { visibility: 'SELECTIVE' });
     }
     missionService.grantShare({
       kind: shareKind,
-      resourceId: shareResourceId,
+      resourceId,
       personId: sharePersonId,
       action: shareAction,
       grantedByPersonId: account!.personId,
@@ -451,6 +458,9 @@ export function MinistryMissionBoard({
             hint="Published / church-wide"
             variant="church"
             {...laneProps('church')}
+            onClearKindFilter={
+              kindFilter !== 'all' ? () => setKindFilter('all') : undefined
+            }
           />
           <Lane
             title="Ministry private"
@@ -458,6 +468,9 @@ export function MinistryMissionBoard({
             variant="private"
             {...laneProps('own')}
             onPublish={isLeader ? publish : undefined}
+            onClearKindFilter={
+              kindFilter !== 'all' ? () => setKindFilter('all') : undefined
+            }
           />
           <Lane
             title="Selected members"
@@ -465,6 +478,9 @@ export function MinistryMissionBoard({
             variant="selective"
             {...laneProps('selective')}
             onPublish={isLeader ? publish : undefined}
+            onClearKindFilter={
+              kindFilter !== 'all' ? () => setKindFilter('all') : undefined
+            }
           />
         </div>
       )}
@@ -550,142 +566,125 @@ export function MinistryMissionBoard({
         wide
       >
         <form className="stack" onSubmit={onCreate}>
-          <div className="field">
-            <label htmlFor="kind">Type</label>
-            <select
-              id="kind"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as typeof kind)}
-            >
-              <option value="PROGRAM">Program</option>
-              <option value="EVENT">Event</option>
-              <option value="TASK">Task</option>
-              <option value="PROJECT">Project</option>
-            </select>
-          </div>
+          <SelectField
+            label="Type"
+            name="kind"
+            id="kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as typeof kind)}
+          >
+            <option value="PROGRAM">Program</option>
+            <option value="EVENT">Event</option>
+            <option value="TASK">Task</option>
+            <option value="PROJECT">Project</option>
+          </SelectField>
           {systemId === 'sys-main' && (
-            <div className="field">
-              <label htmlFor="ownerSys">Owner system</label>
-              <select
-                id="ownerSys"
-                value={ownerSystemId}
-                onChange={(e) =>
-                  setOwnerSystemId(e.target.value as SystemId)
-                }
-              >
-                {activeSystems.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.shortName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="field">
-            <label htmlFor="vis">Visibility</label>
-            <select
-              id="vis"
-              value={visibility}
+            <SelectField
+              label="Owner system"
+              name="ownerSys"
+              id="ownerSys"
+              value={ownerSystemId}
               onChange={(e) =>
-                setVisibility(e.target.value as MissionVisibility)
+                setOwnerSystemId(e.target.value as SystemId)
               }
             >
-              <option value="MINISTRY_PRIVATE">
-                Ministry private (default)
-              </option>
-              <option value="SELECTIVE">Selected members</option>
-              <option value="CHURCH">General church (publish)</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="nm">Name / title</label>
-            <input
-              id="nm"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="ds">Description</label>
-            <textarea
-              id="ds"
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              rows={2}
-            />
-          </div>
+              {activeSystems.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.shortName}
+                </option>
+              ))}
+            </SelectField>
+          )}
+          <SelectField
+            label="Visibility"
+            name="vis"
+            id="vis"
+            value={visibility}
+            onChange={(e) =>
+              setVisibility(e.target.value as MissionVisibility)
+            }
+          >
+            <option value="MINISTRY_PRIVATE">
+              Ministry private (default)
+            </option>
+            <option value="SELECTIVE">Selected members</option>
+            <option value="CHURCH">General church (publish)</option>
+          </SelectField>
+          <TextField
+            label="Name / title"
+            name="nm"
+            id="nm"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <TextAreaField
+            label="Description"
+            name="ds"
+            id="ds"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            rows={2}
+          />
           {kind === 'EVENT' && (
             <>
-              <div className="field">
-                <label htmlFor="st">Starts</label>
-                <input
-                  id="st"
-                  type="datetime-local"
-                  value={startsAt}
-                  onChange={(e) => setStartsAt(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="erm">Registration mode</label>
-                <select
-                  id="erm"
-                  value={eventRegMode}
-                  onChange={(e) =>
-                    setEventRegMode(e.target.value as EventRegistrationMode)
-                  }
-                >
-                  <option value="ANNOUNCEMENT_ONLY">Announcement only</option>
-                  <option value="REGISTRATION_REQUIRED">
-                    Registration required
-                  </option>
-                </select>
-              </div>
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={eventBeyond}
-                  onChange={(e) => setEventBeyond(e.target.checked)}
-                />
-                Beyond owner scope (needs upper approvals)
-              </label>
+              <TextField
+                label="Starts"
+                name="st"
+                id="st"
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                required
+              />
+              <SelectField
+                label="Registration mode"
+                name="erm"
+                id="erm"
+                value={eventRegMode}
+                onChange={(e) =>
+                  setEventRegMode(e.target.value as EventRegistrationMode)
+                }
+              >
+                <option value="ANNOUNCEMENT_ONLY">Announcement only</option>
+                <option value="REGISTRATION_REQUIRED">
+                  Registration required
+                </option>
+              </SelectField>
+              <CheckboxField
+                label="Beyond owner scope (needs upper approvals)"
+                checked={eventBeyond}
+                onChange={setEventBeyond}
+              />
             </>
           )}
           {kind === 'PROJECT' && (
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={eventBeyond}
-                onChange={(e) => setEventBeyond(e.target.checked)}
-              />
-              Beyond owner scope (needs upper approvals)
-            </label>
+            <CheckboxField
+              label="Beyond owner scope (needs upper approvals)"
+              checked={eventBeyond}
+              onChange={setEventBeyond}
+            />
           )}
           {kind === 'TASK' && (
             <>
-              <div className="field">
-                <label htmlFor="to">Responsible person</label>
-                <select
-                  id="to"
-                  value={taskOwnerId}
-                  onChange={(e) => setTaskOwnerId(e.target.value)}
-                >
-                  {peopleService.list().map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={taskGrantAccess}
-                  onChange={(e) => setTaskGrantAccess(e.target.checked)}
-                />
-                Grant temporary system entry while active
-              </label>
+              <SelectField
+                label="Responsible person"
+                name="to"
+                id="to"
+                value={taskOwnerId}
+                onChange={(e) => setTaskOwnerId(e.target.value)}
+              >
+                {peopleService.list().map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.fullName}
+                  </option>
+                ))}
+              </SelectField>
+              <CheckboxField
+                label="Grant temporary system entry while active"
+                checked={taskGrantAccess}
+                onChange={setTaskGrantAccess}
+              />
             </>
           )}
           <button type="submit" className="btn">
@@ -704,67 +703,67 @@ export function MinistryMissionBoard({
           <p className="muted" style={{ margin: 0 }}>
             Sets item to SELECTIVE and grants VIEW or MANAGE to one Person.
           </p>
-          <div className="field">
-            <label htmlFor="sk">Kind</label>
-            <select
-              id="sk"
-              value={shareKind}
-              onChange={(e) => {
-                setShareKind(e.target.value as typeof shareKind);
-                setShareResourceId('');
-              }}
-            >
-              <option value="PROGRAM">Program</option>
-              <option value="EVENT">Event</option>
-              <option value="TASK">Task</option>
-              <option value="PROJECT">Project</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="sr">Item</label>
-            <select
-              id="sr"
-              value={shareResourceId}
-              onChange={(e) => setShareResourceId(e.target.value)}
-              required
-            >
-              <option value="">— select —</option>
-              {selectableResources.map((r) => (
+          <SelectField
+            label="Kind"
+            name="sk"
+            id="sk"
+            value={shareKind}
+            onChange={(e) => {
+              const next = e.target.value as typeof shareKind;
+              setShareKind(next);
+              setShareResourceId('');
+            }}
+          >
+            <option value="PROGRAM">Program</option>
+            <option value="EVENT">Event</option>
+            <option value="TASK">Task</option>
+            <option value="PROJECT">Project</option>
+          </SelectField>
+          <SelectField
+            label="Item"
+            name="sr"
+            id="sr"
+            value={shareResourceId || selectableResources[0]?.id || ''}
+            onChange={(e) => setShareResourceId(e.target.value)}
+            required
+          >
+            {selectableResources.length === 0 ? (
+              <option value="">No items of this kind</option>
+            ) : (
+              selectableResources.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="sp">Person</label>
-            <select
-              id="sp"
-              value={sharePersonId}
-              onChange={(e) => setSharePersonId(e.target.value)}
-              required
-            >
-              <option value="">— select —</option>
-              {peopleService.list().map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="sa">Access</label>
-            <select
-              id="sa"
-              value={shareAction}
-              onChange={(e) =>
-                setShareAction(e.target.value as 'VIEW' | 'MANAGE')
-              }
-            >
-              <option value="VIEW">View</option>
-              <option value="MANAGE">Manage</option>
-            </select>
-          </div>
+              ))
+            )}
+          </SelectField>
+          <SelectField
+            label="Person"
+            name="sp"
+            id="sp"
+            value={sharePersonId}
+            onChange={(e) => setSharePersonId(e.target.value)}
+            required
+          >
+            <option value="">— select —</option>
+            {peopleService.list().map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.fullName}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Access"
+            name="sa"
+            id="sa"
+            value={shareAction}
+            onChange={(e) =>
+              setShareAction(e.target.value as 'VIEW' | 'MANAGE')
+            }
+          >
+            <option value="VIEW">View</option>
+            <option value="MANAGE">Manage</option>
+          </SelectField>
           <button type="submit" className="btn">
             Grant share
           </button>
@@ -783,6 +782,7 @@ function Lane({
   tasks,
   projects,
   onPublish,
+  onClearKindFilter,
 }: {
   title: string;
   hint: string;
@@ -795,6 +795,7 @@ function Lane({
     kind: 'PROGRAM' | 'EVENT' | 'TASK' | 'PROJECT',
     id: string,
   ) => void;
+  onClearKindFilter?: () => void;
 }) {
   const count =
     programs.length + events.length + tasks.length + projects.length;
@@ -815,6 +816,7 @@ function Lane({
         tasks={tasks}
         projects={projects}
         onPublish={onPublish}
+        onClearKindFilter={onClearKindFilter}
       />
     </div>
   );
@@ -880,6 +882,7 @@ function LaneList({
   tasks,
   projects,
   onPublish,
+  onClearKindFilter,
 }: {
   programs: { id: string; name: string; ownerSystemId?: SystemId }[];
   events: { id: string; name: string; type?: string; startsAt?: string }[];
@@ -889,6 +892,7 @@ function LaneList({
     kind: 'PROGRAM' | 'EVENT' | 'TASK' | 'PROJECT',
     id: string,
   ) => void;
+  onClearKindFilter?: () => void;
 }) {
   const empty =
     programs.length + events.length + tasks.length + projects.length === 0;
@@ -897,6 +901,17 @@ function LaneList({
       <EmptyState
         title="Nothing in this lane"
         detail="Create an item or change the kind filter."
+        action={
+          onClearKindFilter ? (
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={onClearKindFilter}
+            >
+              Show all kinds
+            </button>
+          ) : undefined
+        }
       />
     );
   }
