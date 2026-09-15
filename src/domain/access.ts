@@ -10,7 +10,9 @@ import { personCanEnterSystem } from './participation';
 /** Stage 1 coarse scopes — still useful for profile section filters. */
 const ROLE_SCOPE: Record<SystemRole, AccessScope> = {
   CHURCH_LEADER: 'FULL',
+  PASTOR: 'FULL',
   ASSISTANT_PASTOR: 'FULL',
+  CATECHIST: 'FULL',
   CHURCH_SECRETARY: 'FULL',
   CHURCH_TREASURER: 'FINANCE',
   CHOIR_LEADER: 'CHOIR',
@@ -98,7 +100,9 @@ export function allowedOwnProfileSections(): string[] {
 export function roleLabel(role: SystemRole): string {
   const map: Record<SystemRole, string> = {
     CHURCH_LEADER: 'Church Leader',
-    ASSISTANT_PASTOR: 'Assistant Pastor',
+    PASTOR: 'Pastor',
+    ASSISTANT_PASTOR: 'Pastor',
+    CATECHIST: 'Catechist (Umwarimu)',
     CHURCH_SECRETARY: 'Church Secretary',
     CHURCH_TREASURER: 'Church Treasurer',
     CHOIR_LEADER: 'Choir Leader',
