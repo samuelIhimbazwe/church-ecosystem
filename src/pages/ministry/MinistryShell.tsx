@@ -5,7 +5,6 @@ import {
   Navigate,
   Outlet,
   useLocation,
-  useNavigate,
 } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { roleLabel } from '../../domain/access';
@@ -22,8 +21,13 @@ import {
   resolvePeerEntry,
 } from '../../domain/oversightAccess';
 import type { SystemId } from '../../domain/types';
-import { armExitToMainChurch, clearExitToMainChurch } from '../../navigation/systemScope';
-import { authService, systemsService } from '../../services';
+import { clearExitToMainChurch } from '../../navigation/systemScope';
+import {
+  authService,
+  openSystemUrlInNewTab,
+  systemsService,
+} from '../../services';
+import { ThemeToggle } from '../../components/ui/ThemeToggle';
 import { OversightOutlet } from './OversightOutlet';
 
 export function MinistryShell({
@@ -55,16 +59,15 @@ export function MinistryShell({
     canViewPeople,
     positions,
     roles,
+    openPeerSystem,
   } = useAuth();
-  const navigate = useNavigate();
   const system = systemsService.getById(systemId);
   const profilePath = account ? `/people/${account.personId}` : '/';
 
   function openMainChurch() {
-    armExitToMainChurch();
-    authService.setCurrentSystem('sys-main', 'main');
-    refreshSession();
-    navigate('/', { replace: true });
+    const result = openPeerSystem('sys-main');
+    if (!result.ok || !result.url) return;
+    openSystemUrlInNewTab(result.url);
   }
 
   const peerEntry = useMemo(() => {
@@ -143,7 +146,12 @@ export function MinistryShell({
           <p style={{ marginTop: '1rem' }}>
             <Link to={`/login?system=${systemId}`}>Sign in here</Link>
             {' · '}
-            <button type="button" className="btn ghost" onClick={openMainChurch}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={openMainChurch}
+              title="Opens Main Church in a new tab"
+            >
               Open Main Church
             </button>
           </p>
@@ -181,11 +189,13 @@ export function MinistryShell({
           </div>
         </div>
         <div className="row">
+          <ThemeToggle />
           <button
             type="button"
             className="btn ghost"
             style={{ color: '#e4eef7', borderColor: '#2a4a66' }}
             onClick={openMainChurch}
+            title="Opens Main Church in a new tab"
           >
             Open Main Church
           </button>
