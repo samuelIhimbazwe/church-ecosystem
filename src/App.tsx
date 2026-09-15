@@ -2,13 +2,21 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAdminTools } from './components/RequireAdminTools';
+import { ToastProvider } from './components/ui/Toast';
 import { SystemScopeGuard } from './navigation/SystemScopeGuard';
 import { AccessEnginePage } from './pages/AccessEnginePage';
+import { ActivitySessionPage } from './pages/ActivitySessionPage';
 import { CalendarPage } from './pages/CalendarPage';
+import { CheckInPage } from './pages/CheckInPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EventDetailPage } from './pages/EventDetailPage';
 import { EventsPage } from './pages/EventsPage';
+import { BoardPage } from './pages/BoardPage';
+import { PastoralDeskPage } from './pages/PastoralDeskPage';
+import { SystemAdminPage } from './pages/SystemAdminPage';
+import { InboxPage } from './pages/InboxPage';
 import { LoginPage } from './pages/LoginPage';
+import { ReportsHubPage } from './pages/reports/ReportsHubPage';
 import {
   ChoirHomePage,
   ChoirRehearsalsPage,
@@ -67,6 +75,8 @@ import { useActiveChoir } from './pages/ministry/useActiveChoir';
 import {
   FinanceFundLedgerPage,
   FinanceHomePage,
+  FinanceSystemRedirect,
+  MinistryFundLedgerPage,
 } from './pages/ministry/FinancePages';
 import {
   ChurchBalanceSheetPage,
@@ -94,7 +104,6 @@ import {
   YouthHomePage,
   YouthMissionPage,
 } from './pages/ministry/YouthPages';
-import { FinanceShell } from './pages/ministry/FinanceShell';
 import {
   MusicHomePage,
   MusicMissionPage,
@@ -150,81 +159,100 @@ function RequireAuth() {
 
 function ShellWithTitle() {
   const location = useLocation();
-  let title = 'Church Dashboard';
-  let subtitle = 'People registry, organization, and system launcher';
+  let title = 'Home';
+  let subtitle = 'This week at ADEPR Kacyiru — what needs you, and what’s coming.';
 
-  if (location.pathname.startsWith('/people/new')) {
-    title = 'Add Person';
-    subtitle = 'Create an institutional person record';
+  if (location.pathname.startsWith('/inbox')) {
+    title = 'Inbox';
+    subtitle = 'Approvals, handoffs, and work that needs you.';
+  } else if (location.pathname.startsWith('/board')) {
+    title = 'Board';
+    subtitle = 'Meetings, decisions, and follow-ups for church leadership.';
+  } else if (location.pathname.startsWith('/pastoral')) {
+    title = 'Pastoral desk';
+    subtitle =
+      'Pathways, baptism names, discipline, transfer letters, and pulpit.';
+  } else if (location.pathname.startsWith('/system-admin')) {
+    title = 'System admin';
+    subtitle = 'Configure tools for systems you are appointed to — not church ledgers.';
+  } else if (location.pathname.startsWith('/people/new')) {
+    title = 'Add person';
+    subtitle = 'Register someone in the church directory.';
   } else if (location.pathname.includes('/edit')) {
-    title = 'Edit Person';
-    subtitle = 'Update institutional information';
+    title = 'Edit person';
+    subtitle = 'Update directory details.';
   } else if (
     location.pathname.startsWith('/people/') &&
     location.pathname !== '/people'
   ) {
-    title = 'Person Profile';
-    subtitle = '360° institutional record';
+    title = 'Person';
+    subtitle = 'Profile, family, and participation.';
   } else if (location.pathname.startsWith('/people')) {
-    title = 'People Directory';
-    subtitle = 'Search and manage the church people registry';
+    title = 'People';
+    subtitle = 'Search and care for the church directory.';
   } else if (
     location.pathname.startsWith('/organization/') &&
     location.pathname !== '/organization'
   ) {
-    title = 'Organisation detail';
-    subtitle = 'Unit details, leaders, and related structure';
+    title = 'Organisation unit';
+    subtitle = 'Leaders, members, and structure.';
   } else if (location.pathname.startsWith('/organization')) {
     title = 'Organisation';
-    subtitle = 'Ministries, teams, and choir organisation';
+    subtitle = 'Ministries, teams, and choirs.';
   } else if (location.pathname.startsWith('/mission')) {
     title = 'Mission';
-    subtitle = 'Church programs, events, tasks, and selective shares';
+    subtitle = 'Programs, events, tasks, and shared work across the church.';
   } else if (location.pathname.startsWith('/participation')) {
     title = 'Participation';
-    subtitle = 'Memberships, positions, assignments, and system entitlements';
+    subtitle = 'Memberships, offices, and who serves where.';
   } else if (location.pathname.startsWith('/access')) {
-    title = 'Access Engine';
-    subtitle = 'What can this person do right now?';
+    title = 'Access';
+    subtitle = 'See what someone can do right now.';
   } else if (location.pathname.startsWith('/programs/') && location.pathname !== '/programs') {
     title = 'Program';
-    subtitle = 'Cohort roster, sessions, approval, and completion';
+    subtitle = 'Roster, sessions, and progress.';
   } else if (location.pathname.startsWith('/programs')) {
     title = 'Programs';
-    subtitle = 'Recurring programs, cohorts, sessions, and attendance';
+    subtitle = 'Ongoing church programs and cohorts.';
   } else if (
     location.pathname.startsWith('/events/') &&
     location.pathname !== '/events'
   ) {
     title = 'Event';
-    subtitle = 'Approvals, registration, attendance, and next steps';
+    subtitle = 'Plan, register, and follow up.';
   } else if (location.pathname.startsWith('/events')) {
     title = 'Events';
-    subtitle = 'Conferences, baptisms, concerts, retreats';
+    subtitle = 'Services, conferences, baptisms, and gatherings.';
   } else if (
     location.pathname.startsWith('/tasks/') &&
     location.pathname !== '/tasks'
   ) {
     title = 'Task';
-    subtitle = 'Primary + helpers, status, and access revoke on close';
+    subtitle = 'Assignment, helpers, and due date.';
   } else if (location.pathname.startsWith('/tasks')) {
     title = 'Tasks';
-    subtitle = 'Work items that can grant temporary system access';
+    subtitle = 'Assignments for Main Church — with helpers when needed.';
   } else if (
     location.pathname.startsWith('/projects/') &&
     location.pathname !== '/projects'
   ) {
     title = 'Project';
-    subtitle = 'Approvals, collaborators, fund link, and close';
+    subtitle = 'Initiative details, people, and close-out.';
   } else if (location.pathname.startsWith('/projects')) {
     title = 'Projects';
-    subtitle = 'Finite initiatives with optional budget and collaborators';
+    subtitle = 'Time-bound initiatives with clear owners.';
   } else if (location.pathname.startsWith('/calendar')) {
     title = 'Calendar';
-    subtitle = 'Church-wide activities and events';
+    subtitle = 'What’s happening across the church.';
+  } else if (location.pathname.startsWith('/finance')) {
+    title = 'Treasury';
+    subtitle = 'Collections, budgets, and church fund reports.';
   } else if (location.pathname.startsWith('/systems')) {
     title = 'Systems';
-    subtitle = 'Peer systems registry and dual-entry launcher';
+    subtitle = 'Open a ministry or peer system you may enter.';
+  } else if (location.pathname.startsWith('/reports')) {
+    title = 'Reports';
+    subtitle = 'Leadership packs and oversight summaries.';
   }
 
   return <AppShell title={title} subtitle={subtitle} />;
@@ -241,10 +269,6 @@ const WORSHIP_NAV = [
   { to: '/systems/worship/roster', label: 'Duty roster' },
   { to: '/systems/worship/my-contributions', label: 'My contributions' },
   { to: '/systems/worship/finance', label: 'Finance' },
-  { to: '/systems/worship/donations', label: 'Donations' },
-  { to: '/systems/worship/sponsors', label: 'Sponsors' },
-  { to: '/systems/worship/fundraising', label: 'Fundraising' },
-  { to: '/systems/worship/accounting', label: 'Accounting' },
   { to: '/systems/worship/assets', label: 'Assets' },
   { to: '/systems/worship/reports', label: 'Reports' },
 ];
@@ -256,12 +280,9 @@ const YOUTH_NAV = [
   { to: '/systems/youth/events', label: 'Events' },
   { to: '/systems/youth/tasks', label: 'Tasks' },
   { to: '/systems/youth/projects', label: 'Projects' },
+  { to: '/systems/youth/calendar', label: 'Calendar' },
   { to: '/systems/youth/my-contributions', label: 'My contributions' },
   { to: '/systems/youth/finance', label: 'Finance' },
-  { to: '/systems/youth/donations', label: 'Donations' },
-  { to: '/systems/youth/sponsors', label: 'Sponsors' },
-  { to: '/systems/youth/fundraising', label: 'Fundraising' },
-  { to: '/systems/youth/accounting', label: 'Accounting' },
   { to: '/systems/youth/assets', label: 'Assets' },
   { to: '/systems/youth/reports', label: 'Reports' },
 ];
@@ -270,19 +291,14 @@ const MUSIC_NAV = [
   { to: '/systems/music', label: 'Home', end: true },
   { to: '/systems/music/mission', label: 'Mission' },
   { to: '/systems/music/schedule', label: 'Schedule' },
-  { to: '/systems/music/schedule-drafts', label: 'Drafts' },
-  { to: '/systems/music/schedule-published', label: 'Choir schedule' },
   { to: '/systems/music/schedule-inbox', label: 'Inbox' },
   { to: '/systems/music/programs', label: 'Programs' },
   { to: '/systems/music/events', label: 'Events' },
   { to: '/systems/music/tasks', label: 'Tasks' },
   { to: '/systems/music/projects', label: 'Projects' },
+  { to: '/systems/music/calendar', label: 'Calendar' },
   { to: '/systems/music/my-contributions', label: 'My contributions' },
   { to: '/systems/music/finance', label: 'Finance' },
-  { to: '/systems/music/donations', label: 'Donations' },
-  { to: '/systems/music/sponsors', label: 'Sponsors' },
-  { to: '/systems/music/fundraising', label: 'Fundraising' },
-  { to: '/systems/music/accounting', label: 'Accounting' },
   { to: '/systems/music/assets', label: 'Assets' },
   { to: '/systems/music/reports', label: 'Reports' },
 ];
@@ -297,10 +313,8 @@ const PROTOCOL_NAV = [
   { to: '/systems/protocol/attendance', label: 'Attendance' },
   { to: '/systems/protocol/mine', label: 'My schedule' },
   { to: '/systems/protocol/finance', label: 'Finance' },
-  { to: '/systems/protocol/reports', label: 'Reports' },
   { to: '/systems/protocol/inbox', label: 'Inbox' },
-  { to: '/systems/protocol/export', label: 'Export' },
-  { to: '/systems/protocol/history', label: 'History' },
+  { to: '/systems/protocol/reports', label: 'Reports' },
 ];
 
 const DEACON_NAV = [
@@ -327,6 +341,7 @@ function ChoirMissionPage() {
 export default function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <SystemScopeGuard>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -565,6 +580,16 @@ export default function App() {
             />
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route
+              path="calendar"
+              element={
+                <CalendarPage
+                  systemId="sys-youth"
+                  basePath="/systems/youth"
+                  title="Youth calendar"
+                />
+              }
+            />
+            <Route
               path="my-contributions"
               element={<MinistryMyContributionsPage systemId="sys-youth" />}
             />
@@ -595,6 +620,10 @@ export default function App() {
             <Route
               path="reports"
               element={<MinistryFinanceReportsPage systemId="sys-youth" />}
+            />
+            <Route
+              path="ledger"
+              element={<MinistryFundLedgerPage systemId="sys-youth" />}
             />
           </Route>
         </Route>
@@ -673,6 +702,16 @@ export default function App() {
             />
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route
+              path="calendar"
+              element={
+                <CalendarPage
+                  systemId="sys-music"
+                  basePath="/systems/music"
+                  title="Music calendar"
+                />
+              }
+            />
+            <Route
               path="my-contributions"
               element={<MinistryMyContributionsPage systemId="sys-music" />}
             />
@@ -703,6 +742,10 @@ export default function App() {
             <Route
               path="reports"
               element={<MinistryFinanceReportsPage systemId="sys-music" />}
+            />
+            <Route
+              path="ledger"
+              element={<MinistryFundLedgerPage systemId="sys-music" />}
             />
           </Route>
         </Route>
@@ -776,6 +819,16 @@ export default function App() {
               />
               <Route path="projects/:id" element={<ProjectDetailPage />} />
               <Route
+                path="calendar"
+                element={
+                  <CalendarPage
+                    systemId={peer.systemId}
+                    basePath={`/systems/${peer.slug}`}
+                    title={`${peer.title.replace(/ System$/, '')} calendar`}
+                  />
+                }
+              />
+              <Route
                 path="my-contributions"
                 element={
                   <MinistryMyContributionsPage systemId={peer.systemId} />
@@ -811,6 +864,12 @@ export default function App() {
                 path="reports"
                 element={
                   <MinistryFinanceReportsPage systemId={peer.systemId} />
+                }
+              />
+              <Route
+                path="ledger"
+                element={
+                  <MinistryFundLedgerPage systemId={peer.systemId} />
                 }
               />
             </Route>
@@ -898,18 +957,33 @@ export default function App() {
           </Route>
         </Route>
 
-        <Route path="/systems/finance" element={<FinanceShell />}>
-          <Route index element={<FinanceHomePage />} />
-          <Route path="collections" element={<ChurchCollectionsPage />} />
-          <Route path="budgets" element={<ChurchBudgetsPage />} />
-          <Route path="balance-sheet" element={<ChurchBalanceSheetPage />} />
-          <Route path="reports" element={<ChurchReportsPage />} />
-          <Route path="funds/:fundId" element={<FinanceFundLedgerPage />} />
-        </Route>
+        <Route
+          path="/systems/finance/*"
+          element={<FinanceSystemRedirect />}
+        />
 
         <Route element={<RequireAuth />}>
           <Route element={<ShellWithTitle />}>
             <Route index element={<DashboardPage />} />
+            <Route path="inbox" element={<InboxPage />} />
+            <Route path="board" element={<BoardPage />} />
+            <Route path="pastoral" element={<PastoralDeskPage />} />
+            <Route path="system-admin" element={<SystemAdminPage />} />
+            <Route path="finance" element={<FinanceHomePage />} />
+            <Route
+              path="finance/collections"
+              element={<ChurchCollectionsPage />}
+            />
+            <Route path="finance/budgets" element={<ChurchBudgetsPage />} />
+            <Route
+              path="finance/balance-sheet"
+              element={<ChurchBalanceSheetPage />}
+            />
+            <Route path="finance/reports" element={<ChurchReportsPage />} />
+            <Route
+              path="finance/funds/:fundId"
+              element={<FinanceFundLedgerPage />}
+            />
             <Route path="people" element={<PeoplePage />} />
             <Route path="people/new" element={<PersonFormPage />} />
             <Route path="people/:id" element={<PersonProfilePage />} />
@@ -939,6 +1013,10 @@ export default function App() {
             />
             <Route path="programs" element={<ProgramsPage />} />
             <Route path="programs/:id" element={<ProgramDetailPage />} />
+            <Route
+              path="programs/:programId/sessions/:activityId"
+              element={<ActivitySessionPage />}
+            />
             <Route path="events" element={<EventsPage />} />
             <Route path="events/:id" element={<EventDetailPage />} />
             <Route path="tasks" element={<TasksPage />} />
@@ -946,6 +1024,9 @@ export default function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route path="calendar" element={<CalendarPage />} />
+            <Route path="check-in" element={<CheckInPage />} />
+            <Route path="reports" element={<Navigate to="/reports/leadership" replace />} />
+            <Route path="reports/:section" element={<ReportsHubPage />} />
             <Route
               path="systems"
               element={
@@ -959,6 +1040,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </SystemScopeGuard>
+      </ToastProvider>
     </AuthProvider>
   );
 }
