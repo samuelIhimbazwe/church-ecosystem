@@ -1,8 +1,7 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { apiCreateProgram } from '../api/missionApi';
-import { isApiEnabled } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { MissionCreateDrawer } from '../components/MissionCreateDrawer';
 import {
   WorkItemViews,
   WorkViewToggle,
@@ -10,24 +9,16 @@ import {
 } from '../components/WorkItemViews';
 import { DataTable, type DataColumn } from '../components/ui/DataTable';
 import { Drawer } from '../components/ui/Drawer';
-import {
-  SelectField,
-  TextAreaField,
-  TextField,
-} from '../components/ui/Field';
+import { SelectField } from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import { ForbiddenState, StatusPill } from '../components/ui/StatusPill';
 import { useToast } from '../components/ui/Toast';
 import { statusLabel } from '../domain/statusCopy';
-import type { MissionVisibility, Program, ProgramType } from '../domain/types';
+import type { Program } from '../domain/types';
 import { programToWorkItem } from '../domain/workItem';
 import { useProgramsList } from '../hooks/useMissionLists';
 import { useUrlQueryState, useUrlSort } from '../hooks/useUrlQueryState';
-import {
-  isChurchLeader,
-  missionService,
-  systemsService,
-} from '../services';
+import { isChurchLeader, systemsService } from '../services';
 import {
   writeApproveProgram,
   writeSubmitProgram,
@@ -60,14 +51,6 @@ export function ProgramsPage() {
   const churchLead = isChurchLeader(roles);
   const standing = programs.filter((p) => !p.parentProgramId);
   const pending = programs.filter((p) => p.status === 'PENDING_APPROVAL');
-
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [ptype, setPtype] = useState<ProgramType>('CLASS');
-  const [vis, setVis] = useState<MissionVisibility>('CHURCH');
-  const [parentId, setParentId] = useState('');
-  const [cohort, setCohort] = useState('');
-  const [hint, setHint] = useState('');
 
   async function onSubmit(id: string) {
     const r = await writeSubmitProgram(id);
@@ -182,57 +165,6 @@ export function ProgramsPage() {
         />
       </div>
     );
-  }
-
-  async function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage || !name.trim()) return;
-    const base = {
-      name: name.trim(),
-      description: desc || name.trim(),
-      ownerSystemId: 'sys-main' as const,
-      visibility: vis,
-      programType: ptype,
-      scheduleHint: hint || undefined,
-    };
-    let pId = '';
-    let pName = base.name;
-    if (isApiEnabled() && source === 'api') {
-      try {
-        const p = await apiCreateProgram({
-          ...base,
-          status: churchLead ? 'ACTIVE' : 'DRAFT',
-        });
-        pId = p.id;
-        pName = p.name;
-      } catch {
-        /* fall through to seed */
-      }
-    }
-    if (!pId) {
-      const p = missionService.createProgram({
-        ...base,
-        parentProgramId: parentId || undefined,
-        cohortLabel: cohort || undefined,
-        createdByPersonId: account!.personId,
-        startActive: churchLead,
-      });
-      pId = p.id;
-      pName = p.name;
-    }
-    setMsg(
-      churchLead
-        ? `Created & active: ${pName}`
-        : `Draft created: ${pName} — submit for Church Leader approval`,
-    );
-    setName('');
-    setDesc('');
-    setCohort('');
-    setHint('');
-    setParentId('');
-    setCreateOpen(false);
-    refresh();
-    navigate(`/programs/${pId}`);
   }
 
   return (
@@ -433,83 +365,22 @@ export function ProgramsPage() {
         </button>
       </Drawer>
 
-      <Drawer
-        open={createOpen}
-        title="Create program / cohort"
-        onClose={() => setCreateOpen(false)}
-        wide
-      >
-        <form className="stack" onSubmit={onCreate}>
-          <TextField
-            label="Name"
-            name="prog-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <SelectField
-            label="Type"
-            name="prog-type"
-            value={ptype}
-            onChange={(e) => setPtype(e.target.value as ProgramType)}
-          >
-            <option value="CLASS">Class</option>
-            <option value="SMALL_GROUP">Small group</option>
-            <option value="FELLOWSHIP">Fellowship</option>
-            <option value="DISCIPLESHIP">Discipleship</option>
-            <option value="SERVING_TEAM">Serving team</option>
-            <option value="OTHER">Other</option>
-          </SelectField>
-          <SelectField
-            label="Visibility"
-            name="prog-vis"
-            value={vis}
-            onChange={(e) => setVis(e.target.value as MissionVisibility)}
-          >
-            <option value="CHURCH">General church</option>
-            <option value="MINISTRY_PRIVATE">Main private</option>
-            <option value="SELECTIVE">Selective</option>
-          </SelectField>
-          <SelectField
-            label="Standing parent (cohort)"
-            name="prog-parent"
-            value={parentId}
-            onChange={(e) => setParentId(e.target.value)}
-          >
-            <option value="">— Standing / new —</option>
-            {standing
-              .filter((p) => p.status === 'ACTIVE')
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-          </SelectField>
-          <TextField
-            label="Cohort label"
-            name="prog-cohort"
-            value={cohort}
-            onChange={(e) => setCohort(e.target.value)}
-            placeholder="2026 Q3"
-          />
-          <TextField
-            label="Schedule hint"
-            name="prog-hint"
-            value={hint}
-            onChange={(e) => setHint(e.target.value)}
-          />
-          <TextAreaField
-            label="Description"
-            name="prog-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            rows={3}
-          />
-          <button type="submit" className="btn">
-            {churchLead ? 'Create (active)' : 'Create draft'}
-          </button>
-        </form>
-      </Drawer>
+      {account && (
+        <MissionCreateDrawer
+          kind="PROGRAM"
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          listSource={source}
+          accountPersonId={account.personId}
+          canManage={canManage}
+          isChurchLeader={churchLead}
+          onCreated={(r) => {
+            setMsg(r.message);
+            refresh();
+            navigate(`/programs/${r.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
