@@ -12,6 +12,7 @@ import {
   StatusPill,
 } from '../components/ui/StatusPill';
 import {
+  buildPersonParticipationPlaces,
   orgService,
   participationService,
   peopleService,
@@ -73,10 +74,14 @@ export function PersonProfilePage() {
   const assignments = person
     ? participationService.activeAssignments(person.id)
     : [];
-  const entitlements = person
-    ? participationService.entitlementsFor(person.id)
-    : [];
   const roles = person ? participationService.rolesFor(person.id) : [];
+  const places = person
+    ? buildPersonParticipationPlaces({
+        memberships,
+        positions,
+        assignments,
+      })
+    : [];
 
   const profileSections = useMemo(() => {
     if (isSelf && !canViewFullRecord) return allowedOwnProfileSections();
@@ -139,7 +144,6 @@ export function PersonProfilePage() {
   const timeline = peopleService.timeline(person.id);
   const documents = peopleService.documents(person.id);
   const certificates = peopleService.certificates(person.id);
-  const peerSystems = entitlements.filter((e) => e.systemId !== 'sys-main');
   /** Own profile or pastoral FULL — show 360 fields (not pastoral-only notes). */
   const seeFullFields = canViewFullRecord || isSelf;
 
@@ -168,28 +172,40 @@ export function PersonProfilePage() {
             {seeFullFields && <p>Address: {person.address ?? '—'}</p>}
           </SectionPanel>
         </div>
-        <div className="why-callout">
-          <strong>Why they can enter systems</strong>
-          {peerSystems.length === 0 ? (
-            <p className="muted" style={{ margin: '0.4rem 0 0' }}>
-              Main Church only — no peer entitlements.
+        <div className="panel stack">
+          <div>
+            <h3 style={{ margin: 0 }}>Where they participate</h3>
+            <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+              Memberships, positions, and assignments by place — not access
+              rights.
             </p>
+          </div>
+          {places.length === 0 ? (
+            <EmptyState
+              title="No participation on file"
+              detail="Add memberships or positions in Participation."
+            />
           ) : (
-            <ul style={{ margin: '0.45rem 0 0', paddingLeft: '1.1rem' }}>
-              {peerSystems.map((e) => (
-                <li key={e.systemId}>
-                  <strong>
-                    {systemsService.getById(e.systemId)?.shortName ??
-                      e.systemId}
-                  </strong>
-                  <span className="muted"> — {e.reasons.join(' · ')}</span>
+            <ul className="people-place-list">
+              {places.map((place) => (
+                <li key={place.key} className="people-place-card">
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <strong>{place.placeName}</strong>
+                    {place.roles.length > 0 && (
+                      <span className="badge">
+                        {place.roles.join(' · ')}
+                      </span>
+                    )}
+                  </div>
+                  <ul className="rail-list" style={{ marginTop: '0.45rem' }}>
+                    {place.lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
           )}
-          <p className="muted" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
-            <Link to="/access">Probe in Access engine →</Link>
-          </p>
         </div>
         <div className="grid-2">
           <SectionPanel title="Memberships">
@@ -332,7 +348,6 @@ export function PersonProfilePage() {
           <>
             <p style={{ marginTop: 0 }}>Date: {baptism.baptizedOn}</p>
             <p>Place: {baptism.place ?? '—'}</p>
-            <p>Mode: {baptism.mode ?? '—'}</p>
             <p>Minister: {baptism.ministerName ?? '—'}</p>
             <p>Certificate: {baptism.certificateRef ?? '—'}</p>
             {baptism.notes && <p>Notes: {baptism.notes}</p>}
@@ -421,39 +436,67 @@ export function PersonProfilePage() {
     activeSection === 'service'
   ) {
     body = (
-      <div className="grid-2">
-        <SectionPanel title="Positions">
-          {positions.length === 0 ? (
-            <EmptyState title="No positions" />
+      <div className="stack">
+        <SectionPanel title="Where they participate">
+          {places.length === 0 ? (
+            <EmptyState title="No participation on file" />
           ) : (
-            <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-              {positions.map((p) => (
-                <li key={p.id}>
-                  {p.title} ({orgService.getById(p.orgUnitId)?.name})
-                  {p.systemRole ? (
-                    <div className="muted">{roleLabel(p.systemRole)}</div>
-                  ) : null}
+            <ul className="people-place-list">
+              {places.map((place) => (
+                <li key={place.key} className="people-place-card">
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <strong>{place.placeName}</strong>
+                    {place.roles.length > 0 && (
+                      <span className="badge">{place.roles.join(' · ')}</span>
+                    )}
+                  </div>
+                  <ul className="rail-list" style={{ marginTop: '0.45rem' }}>
+                    {place.lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
           )}
         </SectionPanel>
-        <SectionPanel title="Assignments">
-          {assignments.length === 0 ? (
-            <EmptyState title="No assignments" />
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-              {assignments.map((a) => (
-                <li key={a.id}>
-                  {a.title} — {a.contextLabel}
-                  {a.endDate ? (
-                    <div className="muted">Until {a.endDate}</div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionPanel>
+        <div className="grid-2">
+          <SectionPanel title="Positions">
+            {positions.length === 0 ? (
+              <EmptyState title="No positions" />
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                {positions.map((p) => (
+                  <li key={p.id}>
+                    {p.title} ({orgService.getById(p.orgUnitId)?.name})
+                    {p.systemRole ? (
+                      <div className="muted">{roleLabel(p.systemRole)}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionPanel>
+          <SectionPanel title="Assignments">
+            {assignments.length === 0 ? (
+              <EmptyState title="No assignments" />
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                {assignments.map((a) => (
+                  <li key={a.id}>
+                    {a.title} — {a.contextLabel}
+                    {a.endDate ? (
+                      <div className="muted">Until {a.endDate}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionPanel>
+        </div>
       </div>
     );
   } else if (
@@ -493,18 +536,18 @@ export function PersonProfilePage() {
       <SectionPanel title="Account">
         <p className="muted" style={{ marginTop: 0 }}>
           Login credentials are 1:1 with Person. Linking is a secretary /
-          admin workflow (see Access engine).
+          admin workflow.
         </p>
-        <p>
-          Entitled systems:{' '}
-          {entitlements
-            .map(
-              (e) =>
-                systemsService.getById(e.systemId)?.shortName ?? e.systemId,
-            )
-            .join(', ') || 'Main only'}
+        <p style={{ marginBottom: '0.35rem' }}>
+          Participates in:{' '}
+          {places.map((p) => p.placeName).join(', ') || 'None on file'}
         </p>
-        <Link to="/access">Open Access engine →</Link>
+        {places.some((p) => p.roles.length > 0) && (
+          <p className="muted">
+            Roles:{' '}
+            {[...new Set(places.flatMap((p) => p.roles))].join(' · ')}
+          </p>
+        )}
       </SectionPanel>
     );
   }
@@ -570,8 +613,8 @@ export function PersonProfilePage() {
             <div className="value">{assignments.length}</div>
           </div>
           <div className="overview-tile">
-            <div className="label">Peer systems</div>
-            <div className="value">{peerSystems.length}</div>
+            <div className="label">Places</div>
+            <div className="value">{places.length}</div>
           </div>
         </div>
       </div>
