@@ -28,6 +28,24 @@ function currentMonthKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Stable content key — same choirs on same services = same fingerprint. */
+function scheduleFingerprint(
+  periodKey: string,
+  horizon: MusicHorizon,
+  services: MusicServiceSlot[],
+  assignments: MusicAssignment[],
+): string {
+  const svc = [...services]
+    .map((s) => `${s.id}|${s.date}|${s.kind}`)
+    .sort()
+    .join(';');
+  const asg = [...assignments]
+    .map((a) => `${a.serviceId}|${a.unitId}`)
+    .sort()
+    .join(';');
+  return `${periodKey}|${horizon}|${svc}|${asg}`;
+}
+
 let DRAFTS: MusicScheduleDraft[] = [];
 let PUBLISHED: MusicChoirSchedule[] = [];
 let NOTIFS: MusicScheduleNotification[] = [];
@@ -184,7 +202,7 @@ export const musicScheduleService = {
   setCanvasAssignment(
     serviceId: string,
     unitIds: string[],
-  ): { ok: boolean; reason?: string } {
+  ): { ok: boolean; reason?: string; warnings?: string[] } {
     if (!CANVAS) return { ok: false, reason: 'No canvas' };
     const svc = CANVAS.services.find((s) => s.id === serviceId);
     if (!svc) return { ok: false, reason: 'Unknown service' };
@@ -198,13 +216,53 @@ export const musicScheduleService = {
         source: 'MANUAL' as const,
       })),
     ];
-    const v = validateSchedule(CANVAS.services, next);
-    if (!v.ok) return { ok: false, reason: v.reason };
+    const v = validateSchedule(CANVAS.services, next, 'manual');
+    if (!v.ok) return { ok: false, reason: v.reason, warnings: v.warnings };
     CANVAS = { ...CANVAS, assignments: next, warnings: v.warnings };
-    return { ok: true };
+    return { ok: true, warnings: v.warnings };
   },
 
-  /** Step 3 — save immutable draft. */
+  removeCanvasUnit(
+    serviceId: string,
+    unitId: string,
+  ): { ok: boolean; reason?: string; warnings?: string[] } {
+    if (!CANVAS) return { ok: false, reason: 'No canvas' };
+    const units = this.assignmentsForService(CANVAS.assignments, serviceId).filter(
+      (id) => id !== unitId,
+    );
+    return this.setCanvasAssignment(serviceId, units);
+  },
+
+  replaceCanvasUnit(
+    serviceId: string,
+    fromUnitId: string,
+    toUnitId: string,
+  ): { ok: boolean; reason?: string; warnings?: string[] } {
+    if (!CANVAS) return { ok: false, reason: 'No canvas' };
+    const units = this.assignmentsForService(CANVAS.assignments, serviceId);
+    if (!units.includes(fromUnitId)) {
+      return { ok: false, reason: 'Choir not on this service' };
+    }
+    if (units.includes(toUnitId) && toUnitId !== fromUnitId) {
+      return { ok: false, reason: 'Replacement choir already scheduled' };
+    }
+    const next = units.map((id) => (id === fromUnitId ? toUnitId : id));
+    return this.setCanvasAssignment(serviceId, next);
+  },
+
+  addCanvasUnit(
+    serviceId: string,
+    unitId: string,
+  ): { ok: boolean; reason?: string; warnings?: string[] } {
+    if (!CANVAS) return { ok: false, reason: 'No canvas' };
+    const units = this.assignmentsForService(CANVAS.assignments, serviceId);
+    if (units.includes(unitId)) {
+      return { ok: false, reason: 'Choir already scheduled' };
+    }
+    return this.setCanvasAssignment(serviceId, [...units, unitId]);
+  },
+
+  /** Step 3 — save immutable draft (rejects duplicates of existing drafts). */
   saveDraft(personId: string, label?: string): {
     ok: boolean;
     reason?: string;
@@ -215,6 +273,29 @@ export const musicScheduleService = {
     }
     const v = validateSchedule(CANVAS.services, CANVAS.assignments);
     if (!v.ok) return { ok: false, reason: v.reason };
+
+    const fingerprint = scheduleFingerprint(
+      CANVAS.periodKey,
+      CANVAS.horizon,
+      CANVAS.services,
+      CANVAS.assignments,
+    );
+    const duplicate = DRAFTS.find(
+      (d) =>
+        scheduleFingerprint(
+          d.periodKey,
+          d.horizon,
+          d.services,
+          d.assignments,
+        ) === fingerprint,
+    );
+    if (duplicate) {
+      return {
+        ok: false,
+        reason: `Same schedule as “${duplicate.label}”. Rebuild or change a choir before saving again.`,
+      };
+    }
+
     const draft: MusicScheduleDraft = {
       id: nid('mdraft'),
       periodKey: CANVAS.periodKey,
@@ -278,11 +359,11 @@ export const musicScheduleService = {
     personId: string,
     assignments: MusicAssignment[],
     recipientPersonIds: string[],
-  ): { ok: boolean; reason?: string; schedule?: MusicChoirSchedule } {
+  ): { ok: boolean; reason?: string; schedule?: MusicChoirSchedule; warnings?: string[] } {
     const pub = this.getPublished(periodKey);
     if (!pub) return { ok: false, reason: 'No published choir schedule' };
-    const v = validateSchedule(pub.services, assignments);
-    if (!v.ok) return { ok: false, reason: v.reason };
+    const v = validateSchedule(pub.services, assignments, 'manual');
+    if (!v.ok) return { ok: false, reason: v.reason, warnings: v.warnings };
     const updated: MusicChoirSchedule = {
       ...pub,
       assignments: structuredClone(assignments),
@@ -301,7 +382,89 @@ export const musicScheduleService = {
       title: 'Choir schedule updated',
       body: `Choir schedule for ${periodKey} was updated (v${updated.version}). Previous version replaced.`,
     });
-    return { ok: true, schedule: updated };
+    return { ok: true, schedule: updated, warnings: v.warnings };
+  },
+
+  removePublishedUnit(
+    periodKey: string,
+    personId: string,
+    serviceId: string,
+    unitId: string,
+    recipientPersonIds: string[],
+  ) {
+    const pub = this.getPublished(periodKey);
+    if (!pub) return { ok: false as const, reason: 'No published choir schedule' };
+    const units = this.assignmentsForService(pub.assignments, serviceId).filter(
+      (id) => id !== unitId,
+    );
+    const rest = pub.assignments.filter((a) => a.serviceId !== serviceId);
+    const next = [
+      ...rest,
+      ...units.map((uid) => ({
+        id: nid('masg'),
+        serviceId,
+        unitId: uid,
+        source: 'MANUAL' as const,
+      })),
+    ];
+    return this.updatePublished(periodKey, personId, next, recipientPersonIds);
+  },
+
+  replacePublishedUnit(
+    periodKey: string,
+    personId: string,
+    serviceId: string,
+    fromUnitId: string,
+    toUnitId: string,
+    recipientPersonIds: string[],
+  ) {
+    const pub = this.getPublished(periodKey);
+    if (!pub) return { ok: false as const, reason: 'No published choir schedule' };
+    const units = this.assignmentsForService(pub.assignments, serviceId);
+    if (!units.includes(fromUnitId)) {
+      return { ok: false as const, reason: 'Choir not on this service' };
+    }
+    if (units.includes(toUnitId) && toUnitId !== fromUnitId) {
+      return { ok: false as const, reason: 'Replacement choir already scheduled' };
+    }
+    const nextUnits = units.map((id) => (id === fromUnitId ? toUnitId : id));
+    const rest = pub.assignments.filter((a) => a.serviceId !== serviceId);
+    const next = [
+      ...rest,
+      ...nextUnits.map((uid) => ({
+        id: nid('masg'),
+        serviceId,
+        unitId: uid,
+        source: 'MANUAL' as const,
+      })),
+    ];
+    return this.updatePublished(periodKey, personId, next, recipientPersonIds);
+  },
+
+  addPublishedUnit(
+    periodKey: string,
+    personId: string,
+    serviceId: string,
+    unitId: string,
+    recipientPersonIds: string[],
+  ) {
+    const pub = this.getPublished(periodKey);
+    if (!pub) return { ok: false as const, reason: 'No published choir schedule' };
+    const units = this.assignmentsForService(pub.assignments, serviceId);
+    if (units.includes(unitId)) {
+      return { ok: false as const, reason: 'Choir already scheduled' };
+    }
+    const rest = pub.assignments.filter((a) => a.serviceId !== serviceId);
+    const next = [
+      ...rest,
+      ...[...units, unitId].map((uid) => ({
+        id: nid('masg'),
+        serviceId,
+        unitId: uid,
+        source: 'MANUAL' as const,
+      })),
+    ];
+    return this.updatePublished(periodKey, personId, next, recipientPersonIds);
   },
 
   notifyMany(
