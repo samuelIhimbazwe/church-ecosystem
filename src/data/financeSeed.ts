@@ -271,6 +271,27 @@ export const FUNDS: FinanceFund[] = [
  */
 export const FUND_GRANTS: FundAccessGrant[] = [
   {
+    id: 'fg-church-leader-gen-view',
+    fundId: 'fund-general',
+    personId: 'p-pastor',
+    action: 'VIEW',
+    grantedByPersonId: 'p-pastor',
+    reason:
+      'Church Leader — church-wide contribution summary & live detail (not ministry vaults)',
+    status: 'ACTIVE',
+    startDate: '2019-01-01',
+  },
+  {
+    id: 'fg-church-leader-gen-approve',
+    fundId: 'fund-general',
+    personId: 'p-pastor',
+    action: 'APPROVE',
+    grantedByPersonId: 'p-pastor',
+    reason: 'Church Leader — binding church money approvals',
+    status: 'ACTIVE',
+    startDate: '2019-01-01',
+  },
+  {
     id: 'fg-church-treas-gen-manage',
     fundId: 'fund-general',
     personId: 'p-church-treas',
@@ -420,6 +441,16 @@ export const FUND_GRANTS: FundAccessGrant[] = [
     reason: 'Deacon Treasurer — benevolence vault',
     status: 'ACTIVE',
     startDate: '2023-01-01',
+  },
+  {
+    id: 'fg-church-leader-deacon-approve',
+    fundId: 'fund-deacon',
+    personId: 'p-pastor',
+    action: 'APPROVE',
+    grantedByPersonId: 'p-pastor',
+    reason: 'Church Leader — must approve care / benevolence spending',
+    status: 'ACTIVE',
+    startDate: '2019-01-01',
   },
   {
     id: 'fg-music-leader',
