@@ -32,6 +32,11 @@ export type ApiEvent = {
   location?: string | null;
   status: string;
   lifecyclePhase?: string | null;
+  registrationMode?: string | null;
+  capacity?: number | null;
+  beyondOwnerScope?: boolean;
+  projectId?: string | null;
+  programId?: string | null;
 };
 
 export type ApiTask = {
@@ -39,6 +44,7 @@ export type ApiTask = {
   title: string;
   description?: string | null;
   ownerPersonId: string;
+  helperPersonIds?: string[] | string | null;
   systemId?: string | null;
   visibility: string;
   status: string;
@@ -46,6 +52,7 @@ export type ApiTask = {
   startDate: string;
   grantsSystemAccess: boolean;
   contextType: string;
+  contextId?: string | null;
   contextLabel?: string | null;
 };
 
@@ -58,6 +65,10 @@ export type ApiProject = {
   status: string;
   willSpend: boolean;
   fundId?: string | null;
+  programId?: string | null;
+  beyondOwnerScope?: boolean;
+  leadPersonId?: string | null;
+  collaboratorSystemIds?: string[] | string | null;
 };
 
 function mapVisibility(v: string): MissionVisibility {
@@ -87,6 +98,24 @@ export function mapApiProgram(p: ApiProgram): Program {
   };
 }
 
+function parseIdList(raw: string[] | string | null | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) return raw.length ? raw.map(String) : undefined;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) && v.length ? v.map(String) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mapTaskContextType(v: string): WorkTask['contextType'] {
+  if (v === 'PROGRAM' || v === 'EVENT' || v === 'PROJECT' || v === 'NONE') {
+    return v;
+  }
+  return 'NONE';
+}
+
 export function mapApiEvent(e: ApiEvent): ChurchEvent {
   return {
     id: e.id,
@@ -100,6 +129,12 @@ export function mapApiEvent(e: ApiEvent): ChurchEvent {
     location: e.location ?? undefined,
     status: (e.status as ChurchEvent['status']) || 'DRAFT',
     lifecyclePhase: (e.lifecyclePhase as ChurchEvent['lifecyclePhase']) || 'PREPARE',
+    registrationMode:
+      (e.registrationMode as ChurchEvent['registrationMode']) || undefined,
+    capacity: e.capacity ?? undefined,
+    beyondOwnerScope: e.beyondOwnerScope === true,
+    projectId: e.projectId ?? undefined,
+    programId: e.programId ?? undefined,
   };
 }
 
@@ -109,13 +144,15 @@ export function mapApiTask(t: ApiTask): WorkTask {
     title: t.title,
     description: t.description ?? undefined,
     ownerPersonId: t.ownerPersonId,
+    helperPersonIds: parseIdList(t.helperPersonIds),
     systemId: (t.systemId as SystemId) || undefined,
     visibility: mapVisibility(t.visibility),
     status: (t.status as WorkTask['status']) || 'TODO',
     dueDate: t.dueDate ? t.dueDate.slice(0, 10) : undefined,
     startDate: t.startDate.slice(0, 10),
     grantsSystemAccess: t.grantsSystemAccess,
-    contextType: (t.contextType as WorkTask['contextType']) || 'GENERAL',
+    contextType: mapTaskContextType(t.contextType),
+    contextId: t.contextId ?? undefined,
     contextLabel: t.contextLabel ?? undefined,
   };
 }
@@ -130,6 +167,12 @@ export function mapApiProject(p: ApiProject): ChurchProject {
     status: (p.status as ChurchProject['status']) || 'DRAFT',
     willSpend: p.willSpend,
     fundId: p.fundId ?? undefined,
+    programId: p.programId ?? undefined,
+    beyondOwnerScope: p.beyondOwnerScope === true,
+    leadPersonId: p.leadPersonId ?? undefined,
+    collaboratorSystemIds: parseIdList(p.collaboratorSystemIds) as
+      | SystemId[]
+      | undefined,
   };
 }
 
@@ -193,6 +236,120 @@ export async function apiCreateProgram(input: {
     },
   });
   return mapApiProgram(res.program);
+}
+
+export async function apiCreateEvent(input: {
+  name: string;
+  type?: string;
+  description?: string;
+  ownerSystemId: string;
+  visibility?: MissionVisibility;
+  startsAt: string;
+  endsAt?: string;
+  location?: string;
+  status?: string;
+  capacity?: number;
+  registrationMode?: string;
+  beyondOwnerScope?: boolean;
+  programId?: string;
+  projectId?: string;
+  willSpend?: boolean;
+  plannedCost?: number;
+}): Promise<ChurchEvent> {
+  const res = await apiFetch<{ event: ApiEvent }>('/api/mission/events', {
+    method: 'POST',
+    body: {
+      name: input.name,
+      type: input.type,
+      description: input.description,
+      ownerSystemId: input.ownerSystemId,
+      visibility: input.visibility
+        ? toApiVisibility(input.visibility)
+        : 'MINISTRY_PRIVATE',
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      location: input.location,
+      status: input.status,
+      capacity: input.capacity,
+      registrationMode: input.registrationMode,
+      beyondOwnerScope: input.beyondOwnerScope,
+      programId: input.programId,
+      projectId: input.projectId,
+      willSpend: input.willSpend,
+      plannedCost: input.plannedCost,
+    },
+  });
+  return mapApiEvent(res.event);
+}
+
+export async function apiCreateTask(input: {
+  title: string;
+  description?: string;
+  ownerPersonId?: string;
+  helperPersonIds?: string[];
+  systemId?: string;
+  visibility?: MissionVisibility;
+  status?: string;
+  dueDate?: string;
+  grantsSystemAccess?: boolean;
+  contextType?: string;
+  contextId?: string;
+  contextLabel?: string;
+}): Promise<WorkTask> {
+  const res = await apiFetch<{ task: ApiTask }>('/api/mission/tasks', {
+    method: 'POST',
+    body: {
+      title: input.title,
+      description: input.description,
+      ownerPersonId: input.ownerPersonId,
+      helperPersonIds: input.helperPersonIds,
+      systemId: input.systemId,
+      visibility: input.visibility
+        ? toApiVisibility(input.visibility)
+        : 'MINISTRY_PRIVATE',
+      status: input.status,
+      dueDate: input.dueDate,
+      grantsSystemAccess: input.grantsSystemAccess,
+      contextType: input.contextType,
+      contextId: input.contextId,
+      contextLabel: input.contextLabel,
+    },
+  });
+  return mapApiTask(res.task);
+}
+
+export async function apiCreateProject(input: {
+  name: string;
+  description?: string;
+  ownerSystemId: string;
+  visibility?: MissionVisibility;
+  status?: ChurchProject['status'];
+  willSpend?: boolean;
+  fundId?: string;
+  programId?: string;
+  beyondOwnerScope?: boolean;
+  leadPersonId?: string;
+  collaboratorSystemIds?: string[];
+}): Promise<ChurchProject> {
+  const res = await apiFetch<{ project: ApiProject }>('/api/mission/projects', {
+    method: 'POST',
+    body: {
+      name: input.name,
+      description: input.description,
+      ownerSystemId: input.ownerSystemId,
+      visibility: input.visibility
+        ? toApiVisibility(input.visibility)
+        : 'MINISTRY_PRIVATE',
+      status: input.status,
+      willSpend: input.willSpend,
+      fundId: input.fundId,
+      programId: input.programId,
+      beyondOwnerScope: input.beyondOwnerScope,
+      leadPersonId: input.leadPersonId,
+      collaboratorSystemIds: input.collaboratorSystemIds,
+    },
+  });
+  return mapApiProject(res.project);
 }
 
 export async function apiGetProgram(id: string): Promise<Program> {
