@@ -1,8 +1,10 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SelectField, TextField } from '../../components/ui/Field';
 import { useAuth } from '../../auth/AuthContext';
 import { fundIdForChoirOrgUnit } from '../../domain/choirCatalog';
 import { choirOfficeIsTreasurer } from '../../domain/choirAccess';
+import { resolvePeerEntry } from '../../domain/oversightAccess';
 import type { ChoirPaymentMethod } from '../../domain/types';
 import { choirService, financeService } from '../../services';
 import { useActiveChoir } from './useActiveChoir';
@@ -116,69 +118,62 @@ export function ChoirDonationsPage() {
         <div className="panel">
           <h3>Record donation</h3>
           <form className="stack" onSubmit={onSubmit}>
-            <div className="field">
-              <label>Donor</label>
-              <input
-                value={donorName}
-                onChange={(e) => setDonorName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Source</label>
-              <input
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Type</label>
-              <input
-                value={donationType}
-                onChange={(e) => setDonationType(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Amount</label>
-              <input
-                type="number"
-                min={1}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Date</label>
-              <input
-                type="date"
-                value={occurredOn}
-                onChange={(e) => setOccurredOn(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Method</label>
-              <select
-                value={method}
-                onChange={(e) =>
-                  setMethod(e.target.value as ChoirPaymentMethod)
-                }
-              >
-                <option value="BANK">Bank</option>
-                <option value="MOMO">MoMo</option>
-                <option value="CASH">Cash</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Evidence</label>
-              <input
-                value={evidence}
-                onChange={(e) => setEvidence(e.target.value)}
-              />
-            </div>
+            <TextField
+              label="Donor"
+              name="donor-name"
+              value={donorName}
+              onChange={(e) => setDonorName(e.target.value)}
+              required
+            />
+            <TextField
+              label="Source"
+              name="source"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              required
+            />
+            <TextField
+              label="Type"
+              name="donation-type"
+              value={donationType}
+              onChange={(e) => setDonationType(e.target.value)}
+              required
+            />
+            <TextField
+              label="Amount"
+              name="amount"
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+            <TextField
+              label="Date"
+              name="occurred-on"
+              type="date"
+              value={occurredOn}
+              onChange={(e) => setOccurredOn(e.target.value)}
+              required
+            />
+            <SelectField
+              label="Method"
+              name="payment-method"
+              value={method}
+              onChange={(e) =>
+                setMethod(e.target.value as ChoirPaymentMethod)
+              }
+            >
+              <option value="BANK">Bank</option>
+              <option value="MOMO">MoMo</option>
+              <option value="CASH">Cash</option>
+            </SelectField>
+            <TextField
+              label="Evidence"
+              name="evidence"
+              value={evidence}
+              onChange={(e) => setEvidence(e.target.value)}
+            />
             <button type="submit" className="btn" disabled={!canPost}>
               Save donation
             </button>
@@ -338,46 +333,42 @@ export function ChoirFundraisingPage() {
               }
             }}
           >
-            <div className="field">
-              <label>Campaign</label>
-              <select
-                value={campaignId}
-                onChange={(e) => setCampaignId(e.target.value)}
-              >
-                {campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Contributor</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Amount</label>
-              <input
-                type="number"
-                min={1}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Date</label>
-              <input
-                type="date"
-                value={occurredOn}
-                onChange={(e) => setOccurredOn(e.target.value)}
-                required
-              />
-            </div>
+            <SelectField
+              label="Campaign"
+              name="campaign-id"
+              value={campaignId}
+              onChange={(e) => setCampaignId(e.target.value)}
+            >
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
+            <TextField
+              label="Contributor"
+              name="contributor-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+            <TextField
+              label="Amount"
+              name="amount"
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+            <TextField
+              label="Date"
+              name="occurred-on"
+              type="date"
+              value={occurredOn}
+              onChange={(e) => setOccurredOn(e.target.value)}
+              required
+            />
             <button type="submit" className="btn">
               Add gift
             </button>
@@ -574,31 +565,33 @@ export function ChoirAccountingPage() {
               }
             }}
           >
-            <div className="field">
-              <label>Category</label>
-              <input value={cat} onChange={(e) => setCat(e.target.value)} />
-            </div>
-            <div className="field">
-              <label>Amount</label>
-              <input
-                type="number"
-                min={1}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>Date</label>
-              <input
-                type="date"
-                value={occurredOn}
-                onChange={(e) => setOccurredOn(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>Description</label>
-              <input value={desc} onChange={(e) => setDesc(e.target.value)} />
-            </div>
+            <TextField
+              label="Category"
+              name="category"
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+            />
+            <TextField
+              label="Amount"
+              name="amount"
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            <TextField
+              label="Date"
+              name="occurred-on"
+              type="date"
+              value={occurredOn}
+              onChange={(e) => setOccurredOn(e.target.value)}
+            />
+            <TextField
+              label="Description"
+              name="description"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+            />
             <button type="submit" className="btn">
               Submit for approval
             </button>
@@ -610,7 +603,17 @@ export function ChoirAccountingPage() {
 }
 
 export function ChoirAssetsPage() {
-  const { canView, canManage } = useChoirTreasurerAccess();
+  const { account, can, positions } = useAuth();
+  const { canView: treasView, canManage: treasManage } =
+    useChoirTreasurerAccess();
+  const oversight =
+    !!account &&
+    resolvePeerEntry(account.personId, SYS, positions).kind === 'oversight';
+  const canView =
+    treasView ||
+    oversight ||
+    (!!account && can('CHOIR_FINANCE', 'VIEW', SYS));
+  const canManage = treasManage && !oversight;
   const { tick, refresh } = useTick();
   const assets = useMemo(
     () => choirService.listAssets(),
