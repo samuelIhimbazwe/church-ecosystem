@@ -27,8 +27,9 @@ import type {
 
 const GOVERNANCE_ROLES: SystemRole[] = [
   'CHURCH_LEADER',
+  'PASTOR',
   'ASSISTANT_PASTOR',
-  'CHURCH_SECRETARY',
+  'CATECHIST',
 ];
 
 function pushGrant(grants: PermissionGrant[], grant: PermissionGrant) {
@@ -44,46 +45,131 @@ function pushGrant(grants: PermissionGrant[], grant: PermissionGrant) {
   if (!exists) grants.push(grant);
 }
 
+function canonicalGovRole(
+  role: SystemRole | undefined,
+): 'CHURCH_LEADER' | 'PASTOR' | 'CATECHIST' {
+  if (role === 'CATECHIST') return 'CATECHIST';
+  if (role === 'PASTOR' || role === 'ASSISTANT_PASTOR') return 'PASTOR';
+  return 'CHURCH_LEADER';
+}
+
+function mainChurchGovernanceSpecs(
+  role: SystemRole | undefined,
+): Array<Pick<PermissionGrant, 'resource' | 'action'>> {
+  const kind = canonicalGovRole(role);
+  const enter: Array<Pick<PermissionGrant, 'resource' | 'action'>> = [
+    { resource: 'SYSTEM', action: 'ENTER' },
+    { resource: 'PERSON', action: 'VIEW_FULL' },
+    { resource: 'AUDIT', action: 'VIEW' },
+  ];
+  if (kind === 'CHURCH_LEADER') {
+    return [
+      ...enter,
+      { resource: 'PERSON', action: 'MANAGE' },
+      { resource: 'ORG_UNIT', action: 'MANAGE' },
+      { resource: 'MEMBERSHIP', action: 'MANAGE' },
+      { resource: 'POSITION', action: 'MANAGE' },
+      { resource: 'ASSIGNMENT', action: 'MANAGE' },
+      { resource: 'PROGRAM', action: 'MANAGE' },
+      { resource: 'ACTIVITY', action: 'MANAGE' },
+      { resource: 'EVENT', action: 'MANAGE' },
+      { resource: 'TASK', action: 'MANAGE' },
+      { resource: 'PROJECT', action: 'MANAGE' },
+    ];
+  }
+  if (kind === 'CATECHIST') {
+    return [
+      ...enter,
+      { resource: 'ORG_UNIT', action: 'VIEW' },
+      { resource: 'MEMBERSHIP', action: 'MANAGE' },
+      { resource: 'POSITION', action: 'VIEW' },
+      { resource: 'ASSIGNMENT', action: 'MANAGE' },
+      { resource: 'PROGRAM', action: 'MANAGE' },
+      { resource: 'ACTIVITY', action: 'MANAGE' },
+      { resource: 'EVENT', action: 'MANAGE' },
+      { resource: 'TASK', action: 'MANAGE' },
+      { resource: 'PROJECT', action: 'MANAGE' },
+    ];
+  }
+  return [
+    ...enter,
+    { resource: 'ORG_UNIT', action: 'VIEW' },
+    { resource: 'MEMBERSHIP', action: 'VIEW' },
+    { resource: 'POSITION', action: 'VIEW' },
+    { resource: 'ASSIGNMENT', action: 'VIEW' },
+    { resource: 'PROGRAM', action: 'VIEW' },
+    { resource: 'ACTIVITY', action: 'VIEW' },
+    { resource: 'EVENT', action: 'VIEW' },
+    { resource: 'TASK', action: 'VIEW' },
+    { resource: 'PROJECT', action: 'VIEW' },
+  ];
+}
+
 function grantGovernanceBundle(
   grants: PermissionGrant[],
   systemId: SystemId,
   reason: string,
+  systemRole?: SystemRole,
 ) {
-  const specs: Array<Pick<PermissionGrant, 'resource' | 'action'>> = [
+  if (systemId === 'sys-main') {
+    for (const s of mainChurchGovernanceSpecs(systemRole)) {
+      pushGrant(grants, {
+        systemId,
+        resource: s.resource,
+        action: s.action,
+        source: 'GOVERNANCE',
+        reason,
+      });
+    }
+    return;
+  }
+
+  if (systemId === 'sys-finance') {
+    pushGrant(grants, {
+      systemId,
+      resource: 'SYSTEM',
+      action: 'ENTER',
+      source: 'GOVERNANCE',
+      reason,
+    });
+    pushGrant(grants, {
+      systemId,
+      resource: 'AUDIT',
+      action: 'VIEW',
+      source: 'GOVERNANCE',
+      reason,
+    });
+    return;
+  }
+
+  const oversight: Array<Pick<PermissionGrant, 'resource' | 'action'>> = [
     { resource: 'SYSTEM', action: 'ENTER' },
-    { resource: 'PERSON', action: 'MANAGE' },
-    { resource: 'PERSON', action: 'VIEW_FULL' },
-    { resource: 'ORG_UNIT', action: 'MANAGE' },
-    { resource: 'MEMBERSHIP', action: 'MANAGE' },
-    { resource: 'POSITION', action: 'MANAGE' },
-    { resource: 'ASSIGNMENT', action: 'MANAGE' },
-    { resource: 'PROGRAM', action: 'MANAGE' },
-    { resource: 'ACTIVITY', action: 'MANAGE' },
-    { resource: 'EVENT', action: 'MANAGE' },
-    { resource: 'TASK', action: 'MANAGE' },
-    { resource: 'PROJECT', action: 'MANAGE' },
+    { resource: 'PERSON', action: 'VIEW' },
+    { resource: 'ORG_UNIT', action: 'VIEW' },
+    { resource: 'MEMBERSHIP', action: 'VIEW' },
+    { resource: 'PROGRAM', action: 'VIEW' },
+    { resource: 'ACTIVITY', action: 'VIEW' },
+    { resource: 'EVENT', action: 'VIEW' },
+    { resource: 'TASK', action: 'VIEW' },
+    { resource: 'PROJECT', action: 'VIEW' },
     { resource: 'AUDIT', action: 'VIEW' },
     { resource: 'CHOIR_REPERTOIRE', action: 'VIEW' },
     { resource: 'CHOIR_ROSTER', action: 'VIEW' },
-    // CHOIR_FINANCE is office-scoped (treasurer / coordinator / …) — not governance
     { resource: 'WORSHIP_REPERTOIRE', action: 'VIEW' },
     { resource: 'WORSHIP_ROSTER', action: 'VIEW' },
-    { resource: 'WORSHIP_FINANCE', action: 'VIEW' },
     { resource: 'YOUTH_GROUP', action: 'VIEW' },
     { resource: 'PROTOCOL_ROSTER', action: 'VIEW' },
     { resource: 'PROTOCOL_SCHEDULE', action: 'VIEW' },
     { resource: 'DEACON_ROSTER', action: 'VIEW' },
     { resource: 'DEACON_CARE', action: 'VIEW' },
-    { resource: 'DEACON_FINANCE', action: 'VIEW' },
-    { resource: 'MINISTRY_FINANCE', action: 'VIEW' },
   ];
-  for (const s of specs) {
+  for (const s of oversight) {
     pushGrant(grants, {
       systemId,
       resource: s.resource,
       action: s.action,
       source: 'GOVERNANCE',
-      reason,
+      reason: `${reason} — peer oversight`,
     });
   }
 }
@@ -272,9 +358,33 @@ export function buildEffectiveAccess(
       (p.systemRole ? GOVERNANCE_ROLES.includes(p.systemRole) : false);
 
     if (isGov) {
+      const govRole =
+        p.systemRole ??
+        (p.grantsAllSystems ? ('CHURCH_LEADER' as SystemRole) : undefined);
       for (const systemId of input.allSystemIds) {
-        grantGovernanceBundle(grants, systemId, `${p.title} (governance)`);
+        grantGovernanceBundle(
+          grants,
+          systemId,
+          `${p.title} (governance)`,
+          govRole,
+        );
       }
+      if (p.systemRole === 'CHURCH_LEADER') {
+        pushGrant(grants, {
+          systemId: 'sys-main',
+          resource: 'BOARD',
+          action: 'MANAGE',
+          source: 'GOVERNANCE',
+          reason: `${p.title} — call Board meetings`,
+        });
+      }
+      pushGrant(grants, {
+        systemId: 'sys-main',
+        resource: 'BOARD',
+        action: 'VIEW',
+        source: 'GOVERNANCE',
+        reason: `${p.title} — Board seat`,
+      });
       continue;
     }
 
@@ -286,9 +396,43 @@ export function buildEffectiveAccess(
         source: 'POSITION',
         reason: p.title,
       });
-      // Choir offices get mission scope from CHOIR_OFFICE_GRANTS — not a blanket MANAGE.
+
+      if ((p as { systemAdmin?: boolean }).systemAdmin) {
+        pushGrant(grants, {
+          systemId: p.systemId,
+          resource: 'SYSTEM_CONFIG',
+          action: 'MANAGE',
+          source: 'POSITION',
+          reason: `${p.title} — system admin`,
+        });
+        pushGrant(grants, {
+          systemId: p.systemId,
+          resource: 'MEMBERSHIP',
+          action: 'VIEW',
+          source: 'POSITION',
+          reason: `${p.title} — system admin`,
+        });
+        pushGrant(grants, {
+          systemId: p.systemId,
+          resource: 'POSITION',
+          action: 'VIEW',
+          source: 'POSITION',
+          reason: `${p.title} — system admin`,
+        });
+      }
+
       const choirScoped = p.systemId === 'sys-choir' && p.choirOffice;
-      if (!choirScoped) {
+      const office =
+        p.ministryOffice ??
+        p.choirOffice ??
+        p.worshipOffice ??
+        p.protocolOffice ??
+        p.deaconOffice;
+      const adminOnly =
+        (p as { systemAdmin?: boolean }).systemAdmin === true &&
+        !office &&
+        !p.systemRole;
+      if (!choirScoped && !adminOnly) {
         for (const resource of [
           'PROGRAM',
           'ACTIVITY',
@@ -309,13 +453,6 @@ export function buildEffectiveAccess(
 
     if (p.systemRole === 'CHURCH_TREASURER') {
       pushGrant(grants, {
-        systemId: 'sys-finance',
-        resource: 'SYSTEM',
-        action: 'ENTER',
-        source: 'POSITION',
-        reason: p.title,
-      });
-      pushGrant(grants, {
         systemId: 'sys-main',
         resource: 'SYSTEM',
         action: 'ENTER',
@@ -323,13 +460,13 @@ export function buildEffectiveAccess(
         reason: p.title,
       });
       pushGrant(grants, {
-        systemId: 'sys-finance',
+        systemId: 'sys-main',
         resource: 'AUDIT',
         action: 'VIEW',
         source: 'POSITION',
         reason: `${p.title} — treasury audit`,
       });
-      // Fund vault access still requires FundAccessGrant (ORG_PRIVATE).
+      // Church treasury is a Main module; vault ops still need FundAccessGrant.
     }
 
     // Mission board leaders: President / VP / Secretary / Treasurer
@@ -385,6 +522,13 @@ export function buildEffectiveAccess(
             action: 'VIEW',
             source: 'POSITION',
             reason: `${p.title} · ministry finance view`,
+          });
+          pushGrant(grants, {
+            systemId: 'sys-main',
+            resource: 'BOARD',
+            action: 'VIEW',
+            source: 'POSITION',
+            reason: `${p.title} — Board seat`,
           });
         }
       }
