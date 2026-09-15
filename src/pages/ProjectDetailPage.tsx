@@ -1,24 +1,45 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { isApiEnabled } from '../api';
+import { apiGetProjectPulse, type ApiPulse } from '../api/missionApi';
 import { useAuth } from '../auth/AuthContext';
+import { MissionPulsePanel } from '../components/MissionPulsePanel';
 import { StewardshipPanel } from '../components/StewardshipPanel';
-import { ApprovalStepper } from '../components/ui/ApprovalStepper';
+import { ApprovalRecord } from '../components/ui/ApprovalRecord';
 import { StatusPill } from '../components/ui/StatusPill';
 import { canApproveScopeLevel } from '../domain/eventScope';
+import { computeMissionHealth } from '../domain/missionHealth';
+import {
+  blockerAgeDays,
+  openBlockers,
+} from '../domain/deliveryRisk';
+import { projectTemplates } from '../domain/taskTemplates';
 import {
   confirmedFundingTotal,
   formatRwf,
   fundingGap,
+  openAdvances,
+  upsertHealthSnapshot,
 } from '../domain/stewardship';
 import type { SystemId } from '../domain/types';
 import { missionListPath } from '../navigation/missionPaths';
 import {
   financeService,
-  isChurchLeadership,
+  isChurchLeader,
   missionService,
   peopleService,
   systemsService,
 } from '../services';
+import {
+  writeAddProjectCollaboratorPerson,
+  writeAddProjectCollaboratorSystem,
+  writeApproveProject,
+  writeApproveProjectLevel,
+  writeBeginCloseProject,
+  writeCancelProject,
+  writeStartProject,
+  writeSubmitProject,
+} from '../services/missionWrite';
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,10 +52,97 @@ export function ProjectDetailPage() {
     refreshSession();
   };
   const [msg, setMsg] = useState('');
+  const [pulse, setPulse] = useState<ApiPulse | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      if (isApiEnabled()) {
+        try {
+          const p = await apiGetProjectPulse(id);
+          if (!cancelled) setPulse(p);
+          return;
+        } catch {
+          /* local */
+        }
+      }
+      const proj = missionService.getProject(id);
+      if (!proj || cancelled) return;
+      const health = computeMissionHealth(proj, { status: proj.status });
+      const today = new Date().toISOString().slice(0, 10);
+      if (
+        proj.status !== 'DONE' &&
+        proj.status !== 'CANCELLED' &&
+        !(proj.healthSnapshots ?? []).some((h) => h.date === today)
+      ) {
+        const patched = upsertHealthSnapshot(proj, {
+          date: today,
+          score: health.score,
+          tone: health.tone,
+          label: health.label,
+          parts: health.parts,
+        });
+        missionService.updateProject(id, {
+          healthSnapshots: patched.healthSnapshots,
+        });
+      }
+      const live = missionService.getProject(id) ?? proj;
+      setPulse({
+        kind: 'PROJECT',
+        id: live.id,
+        name: live.name,
+        status: live.status,
+        health,
+        money: {
+          plannedCost: Number(live.plannedCost) || 0,
+          confirmedFunding: confirmedFundingTotal(live),
+          usedCost: Number(live.usedCost) || 0,
+          gap: fundingGap(live),
+          openAdvances: openAdvances(live).length,
+        },
+        openRequiredDelivery: (live.deliveryItems ?? [])
+          .filter((d) => d.tier === 'REQUIRED' && d.status === 'TODO')
+          .map((d) => ({ id: d.id, title: d.title, status: d.status })),
+        nextSession: null,
+        needsMeHints: [],
+        healthSnapshots: (live.healthSnapshots ?? []).slice(-14).map((h) => ({
+          date: h.date,
+          score: h.score,
+          tone: h.tone,
+          label: h.label,
+        })),
+        blockers: openBlockers(live.blockers).map((b) => ({
+          id: b.id,
+          title: b.title,
+          severity: b.severity,
+          status: b.status,
+          ownerPersonId: b.ownerPersonId,
+          createdAt: b.createdAt,
+          ageDays: blockerAgeDays(b),
+          deliveryItemId: b.deliveryItemId,
+          taskId: b.taskId,
+        })),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
   const [closeOpen, setCloseOpen] = useState(false);
   const [addSys, setAddSys] = useState<SystemId | ''>('');
   const [addPerson, setAddPerson] = useState('');
   const [linkProgramId, setLinkProgramId] = useState('');
+  const [forceSpend, setForceSpend] = useState(false);
+  const [forceSpendReason, setForceSpendReason] = useState('');
+  const [blockerTitle, setBlockerTitle] = useState('');
+  const [blockerSeverity, setBlockerSeverity] = useState<'BLOCKER' | 'RISK'>(
+    'BLOCKER',
+  );
+  const [blockerOwner, setBlockerOwner] = useState('');
+  const [blockerDeliveryId, setBlockerDeliveryId] = useState('');
+  const [blockerTaskId, setBlockerTaskId] = useState('');
+  const [tplId, setTplId] = useState('tpl-project-kickoff');
 
   const project = id ? missionService.getProject(id) : null;
 
@@ -56,7 +164,7 @@ export function ProjectDetailPage() {
   }
 
   const canManage = can('PROJECT', 'MANAGE');
-  const churchLead = isChurchLeadership(roles);
+  const churchLead = isChurchLeader(roles);
   const closed = project.status === 'DONE' || project.status === 'CANCELLED';
   const owner = systemsService.getById(project.ownerSystemId);
   const chain = missionService.projectApprovalChain(project.id);
@@ -97,8 +205,8 @@ export function ProjectDetailPage() {
     return p?.preferredName ?? p?.fullName ?? pid;
   }
 
-  function doApproveLevel(levelKey: string) {
-    const r = missionService.approveProjectLevel({
+  async function doApproveLevel(levelKey: string) {
+    const r = await writeApproveProjectLevel({
       projectId: project!.id,
       levelKey,
       personId: account!.personId,
@@ -115,26 +223,29 @@ export function ProjectDetailPage() {
     refresh();
   }
 
-  function doCancel() {
-    const r = missionService.cancelProject(project!.id);
+  async function doCancel() {
+    const r = await writeCancelProject(project!.id);
     setMsg(r.ok ? 'Cancelled — recorded' : (r.reason ?? 'Failed'));
     refresh();
   }
 
-  function doAddSys(e: FormEvent) {
+  async function doAddSys(e: FormEvent) {
     e.preventDefault();
     if (!addSys) return;
-    missionService.addProjectCollaboratorSystem(project!.id, addSys);
-    setMsg('Collaborating system added');
+    const r = await writeAddProjectCollaboratorSystem(
+      project!.id,
+      addSys as SystemId,
+    );
+    setMsg(r.ok ? 'Collaborating system added' : (r.reason ?? 'Failed'));
     setAddSys('');
     refresh();
   }
 
-  function doAddPerson(e: FormEvent) {
+  async function doAddPerson(e: FormEvent) {
     e.preventDefault();
     if (!addPerson) return;
-    missionService.addProjectCollaboratorPerson(project!.id, addPerson);
-    setMsg('Collaborating person added');
+    const r = await writeAddProjectCollaboratorPerson(project!.id, addPerson);
+    setMsg(r.ok ? 'Collaborating person added' : (r.reason ?? 'Failed'));
     setAddPerson('');
     refresh();
   }
@@ -230,8 +341,8 @@ export function ProjectDetailPage() {
               vault to everyone.
             </p>
             {fund && (
-              <Link to="/systems/finance" style={{ fontSize: '0.9rem' }}>
-                Open Finance system →
+              <Link to="/finance" style={{ fontSize: '0.9rem' }}>
+                Open church treasury →
               </Link>
             )}
           </div>
@@ -251,8 +362,8 @@ export function ProjectDetailPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => {
-                const r = missionService.submitProjectForApproval(project.id);
+              onClick={async () => {
+                const r = await writeSubmitProject(project.id);
                 setMsg(
                   r.ok ? 'Submitted for approval' : (r.reason ?? 'Failed'),
                 );
@@ -268,8 +379,8 @@ export function ProjectDetailPage() {
               <button
                 type="button"
                 className="btn"
-                onClick={() => {
-                  const r = missionService.approveProject(
+                onClick={async () => {
+                  const r = await writeApproveProject(
                     project.id,
                     account.personId,
                     roles,
@@ -286,30 +397,61 @@ export function ProjectDetailPage() {
               </button>
             )}
           {canManage && project.status === 'PLANNED' && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const r = missionService.startProject(project.id);
-                setMsg(
-                  r.ok
-                    ? [
-                        r.gap
-                          ? `Running — funding gap still ${r.gap.toLocaleString()} RWF`
-                          : 'Project started — ACTIVE',
-                        r.openRequired
-                          ? `(${r.openRequired} required delivery still open)`
-                          : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')
-                    : (r.reason ?? 'Failed'),
-                );
-                refresh();
-              }}
-            >
-              Start running
-            </button>
+            <div className="stack" style={{ gap: '0.35rem' }}>
+              {project.willSpend && fundingGap(project) > 0 && (
+                <div className="steward-banner warn">
+                  Funding gap {formatRwf(fundingGap(project))} — confirm funding
+                  or force start with a reason.
+                  <label className="row" style={{ marginTop: '0.35rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={forceSpend}
+                      onChange={(e) => setForceSpend(e.target.checked)}
+                    />
+                    Force start despite gap
+                  </label>
+                  {forceSpend && (
+                    <input
+                      style={{ marginTop: '0.35rem', width: '100%' }}
+                      placeholder="Reason (required)"
+                      value={forceSpendReason}
+                      onChange={(e) => setForceSpendReason(e.target.value)}
+                    />
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className="btn"
+                onClick={async () => {
+                  const r = await writeStartProject(project.id, {
+                    forceSpendGap: forceSpend || undefined,
+                    forceReason: forceSpend ? forceSpendReason : undefined,
+                  });
+                  setMsg(
+                    r.ok
+                      ? [
+                          r.gap
+                            ? `Running — funding gap still ${r.gap.toLocaleString()} RWF`
+                            : 'Project started — ACTIVE',
+                          r.openRequired
+                            ? `(${r.openRequired} required delivery still open)`
+                            : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')
+                      : (r.reason ?? 'Failed'),
+                  );
+                  if (r.ok) {
+                    setForceSpend(false);
+                    setForceSpendReason('');
+                  }
+                  refresh();
+                }}
+              >
+                Start running
+              </button>
+            </div>
           )}
           {canManage && project.status === 'ACTIVE' && (
             <button
@@ -343,8 +485,16 @@ export function ProjectDetailPage() {
       {project.beyondOwnerScope && (
         <div className="panel">
           <h3>Approval chain</h3>
-          <ApprovalStepper
+          <ApprovalRecord
+            routeLabel="Beyond owner scope · org chain"
+            gateHint="Each level must approve before SETUP (PLANNED)."
             completeHint="All levels approved — project enters SETUP (PLANNED)."
+            timeline={(project.approvals ?? []).map((a) => ({
+              id: `${a.levelKey}-${a.approvedAt}`,
+              at: a.approvedAt.slice(0, 10),
+              label: a.label,
+              detail: personName(a.personId),
+            }))}
             steps={chain.map((level) => {
               const done = (project.approvals ?? []).some(
                 (a) => a.levelKey === level.levelKey,
@@ -395,6 +545,200 @@ export function ProjectDetailPage() {
             </select>
             <button type="submit" className="btn ghost">
               Save link
+            </button>
+          </form>
+        </div>
+      )}
+
+      {pulse && (
+        <div className="panel">
+          <MissionPulsePanel pulse={pulse} />
+        </div>
+      )}
+
+      {canManage && !closed && (
+        <div className="panel">
+          <h3>Blockers & risks</h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Age + owner on Pulse. Link to a delivery item or task when known.
+          </p>
+          {(project.blockers ?? []).length === 0 ? (
+            <p className="muted">None open yet.</p>
+          ) : (
+            <ul className="steward-list">
+              {(project.blockers ?? []).map((b) => (
+                <li key={b.id}>
+                  <div>
+                    <strong>{b.title}</strong>{' '}
+                    <span className="badge">{b.severity}</span>{' '}
+                    <span className="badge">{b.status}</span>
+                    <div className="muted" style={{ fontSize: '0.85rem' }}>
+                      Owner {personName(b.ownerPersonId)} ·{' '}
+                      {blockerAgeDays(b)}d
+                      {b.taskId ? ` · task ${b.taskId}` : ''}
+                      {b.deliveryItemId
+                        ? ` · delivery ${b.deliveryItemId}`
+                        : ''}
+                    </div>
+                  </div>
+                  {b.status !== 'RESOLVED' && (
+                    <div className="row">
+                      {b.status === 'OPEN' && (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => {
+                            missionService.setBlockerStatus(
+                              'PROJECT',
+                              project.id,
+                              b.id,
+                              'MITIGATING',
+                            );
+                            setMsg('Blocker → mitigating');
+                            refresh();
+                          }}
+                        >
+                          Mitigate
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          missionService.setBlockerStatus(
+                            'PROJECT',
+                            project.id,
+                            b.id,
+                            'RESOLVED',
+                          );
+                          setMsg('Blocker resolved');
+                          refresh();
+                        }}
+                      >
+                        Resolve
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            className="stack"
+            style={{ marginTop: '0.75rem' }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const r = missionService.addBlocker('PROJECT', project.id, {
+                title: blockerTitle,
+                severity: blockerSeverity,
+                ownerPersonId: blockerOwner || account.personId,
+                deliveryItemId: blockerDeliveryId || undefined,
+                taskId: blockerTaskId || undefined,
+              });
+              setMsg(r.ok ? 'Blocker added' : (r.reason ?? 'Failed'));
+              if (r.ok) {
+                setBlockerTitle('');
+                setBlockerDeliveryId('');
+                setBlockerTaskId('');
+              }
+              refresh();
+            }}
+          >
+            <div className="row">
+              <input
+                placeholder="Blocker / risk title"
+                value={blockerTitle}
+                onChange={(e) => setBlockerTitle(e.target.value)}
+                required
+                style={{ flex: 1 }}
+              />
+              <select
+                value={blockerSeverity}
+                onChange={(e) =>
+                  setBlockerSeverity(e.target.value as 'BLOCKER' | 'RISK')
+                }
+              >
+                <option value="BLOCKER">Blocker</option>
+                <option value="RISK">Risk</option>
+              </select>
+            </div>
+            <div className="row">
+              <select
+                value={blockerOwner || account.personId}
+                onChange={(e) => setBlockerOwner(e.target.value)}
+              >
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Owner: {p.preferredName ?? p.fullName}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={blockerDeliveryId}
+                onChange={(e) => setBlockerDeliveryId(e.target.value)}
+              >
+                <option value="">Delivery item (optional)</option>
+                {(project.deliveryItems ?? []).map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={blockerTaskId}
+                onChange={(e) => setBlockerTaskId(e.target.value)}
+              >
+                <option value="">Task (optional)</option>
+                {openTasks.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" className="btn">
+                Add
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {canManage && !closed && (
+        <div className="panel">
+          <h3>Spawn checklist from template</h3>
+          <form
+            className="row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const r = missionService.spawnTasksFromTemplate({
+                templateId: tplId,
+                ownerPersonId: account.personId,
+                createdByPersonId: account.personId,
+                systemId: project.ownerSystemId,
+                contextType: 'PROJECT',
+                contextId: project.id,
+                contextLabel: project.name,
+              });
+              setMsg(
+                r.ok
+                  ? `Spawned ${r.tasks?.length ?? 0} tasks`
+                  : (r.reason ?? 'Failed'),
+              );
+              refresh();
+            }}
+          >
+            <select
+              value={tplId}
+              onChange={(e) => setTplId(e.target.value)}
+            >
+              {projectTemplates().map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label} ({t.items.length})
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn ghost">
+              Spawn tasks
             </button>
           </form>
         </div>
@@ -523,8 +867,8 @@ export function ProjectDetailPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => {
-                const r = missionService.beginCloseProject(project.id);
+              onClick={async () => {
+                const r = await writeBeginCloseProject(project.id);
                 setMsg(
                   r.ok
                     ? 'Entered CLOSING — finish checklist'
@@ -559,8 +903,8 @@ export function ProjectDetailPage() {
             <button
               type="button"
               className="btn ghost"
-              onClick={() => {
-                missionService.beginCloseProject(project.id);
+              onClick={async () => {
+                await writeBeginCloseProject(project.id);
                 setCloseOpen(true);
                 refresh();
               }}
