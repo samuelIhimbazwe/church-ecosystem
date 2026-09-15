@@ -367,7 +367,7 @@ export const FUND_GRANTS: FundAccessGrant[] = [
     personId: 'p-member',
     action: 'VIEW',
     grantedByPersonId: 'p-choir-leader',
-    reason: 'Usher lead — view concert budget only',
+    reason: 'Protocol lead — view concert budget only',
     status: 'ACTIVE',
     startDate: '2026-08-15',
     endDate: '2026-12-31',
