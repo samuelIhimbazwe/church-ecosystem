@@ -39,11 +39,19 @@ export let DEACON_CASES: DeaconCareCase[] = [
     title: 'Hospital visit — Remera',
     personId: 'p-member',
     householdNote: 'Patrick Niyonzima household',
-    status: 'IN_PROGRESS',
+    status: 'HANDLING',
     priority: 'HIGH',
     openedOn: '2026-09-01',
     assignedPersonId: 'p-deacon-coord',
-    notes: 'Surgery recovery; meals and prayer requested',
+    category: 'SICK',
+    summary: 'Sick · hospital · recovery follow-up',
+    privateNotes: 'Surgery recovery; meals and prayer requested',
+    sickSince: '2026-08-28',
+    sickLocation: 'HOSPITAL',
+    sickStatus: 'Recovering',
+    submittedByRole: 'DEACON',
+    submittedByPersonId: 'p-deacon-coord',
+    escalateTo: 'CHURCH_LEADER',
   },
   {
     id: 'dcase-2',
@@ -53,7 +61,12 @@ export let DEACON_CASES: DeaconCareCase[] = [
     priority: 'NORMAL',
     openedOn: '2026-09-05',
     assignedPersonId: 'p-deacon-treas',
-    notes: 'Benevolence assessment pending',
+    category: 'DIED_OR_BEREAVED',
+    summary: 'Lost loved one · benevolence assessment',
+    privateNotes: 'Benevolence assessment pending',
+    submittedByRole: 'SECRETARY',
+    submittedByPersonId: 'p-secretary',
+    escalateTo: 'CATECHIST',
   },
   {
     id: 'dcase-3',
@@ -63,7 +76,26 @@ export let DEACON_CASES: DeaconCareCase[] = [
     priority: 'LOW',
     openedOn: '2026-08-10',
     assignedPersonId: 'p-deacon-coord',
-    notes: 'One-time fuel support for ministry trip — closed',
+    category: 'OTHER_ISSUE',
+    categoryDetail: 'Transport hardship',
+    summary: 'Other issue · Transport hardship',
+    privateNotes: 'One-time fuel support for ministry trip — closed',
+    submittedByRole: 'DEACON',
+    submittedByPersonId: 'p-deacon-coord',
+  },
+  {
+    id: 'dcase-4',
+    title: 'Upcoming wedding — blessing',
+    personId: 'p-youth-leader',
+    status: 'WILL_HANDLE',
+    priority: 'NORMAL',
+    openedOn: '2026-09-10',
+    assignedPersonId: 'p-deacon-coord',
+    category: 'WEDDING',
+    summary: 'Have a wedding · clearance underway',
+    submittedByRole: 'MEMBER',
+    submittedByPersonId: 'p-youth-leader',
+    escalateTo: 'PASTOR',
   },
 ];
 
@@ -121,11 +153,9 @@ export let DEACON_EXPENSES: DeaconExpenseRecord[] = [
     amount: 50_000,
     occurredOn: '2026-09-04',
     description: 'Hospital meal support — case dcase-1',
-    status: 'APPROVED',
+    status: 'PENDING',
     caseId: 'dcase-1',
     recordedByPersonId: 'p-deacon-treas',
-    approvedByPersonId: 'p-deacon-coord',
-    financeTxnId: 'txn-deacon-seed-exp-1',
   },
   {
     id: 'dexp-2',
@@ -169,8 +199,8 @@ export function updateDeaconContribution(
   );
 }
 
-export function pushDeaconExpense(r: DeaconExpenseRecord) {
-  DEACON_EXPENSES = [r, ...DEACON_EXPENSES];
+export function pushDeaconExpense(e: DeaconExpenseRecord) {
+  DEACON_EXPENSES = [e, ...DEACON_EXPENSES];
 }
 
 export function updateDeaconExpense(
