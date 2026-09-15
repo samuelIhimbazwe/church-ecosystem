@@ -1,20 +1,49 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import {
+  WorkItemViews,
+  WorkViewToggle,
+  type WorkViewMode,
+} from '../components/WorkItemViews';
 import { Drawer } from '../components/ui/Drawer';
+import {
+  CheckboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
   ForbiddenState,
   StatusPill,
 } from '../components/ui/StatusPill';
-import type { MissionVisibility, TaskContextType } from '../domain/types';
+import { useToast } from '../components/ui/Toast';
+import type {
+  MissionVisibility,
+  TaskContextType,
+  WorkTask,
+} from '../domain/types';
+import { taskToWorkItem } from '../domain/workItem';
 import { useTasksList } from '../hooks/useMissionLists';
 import { peopleService, systemsService, missionService } from '../services';
+import { writeCompleteTask, writeReopenTask } from '../services/missionWrite';
+
+function taskUrgency(t: WorkTask): 'overdue' | 'critical' | 'grant' | null {
+  if (t.status === 'DONE' || t.status === 'CANCELLED') return null;
+  if (t.grantsSystemAccess) return 'grant';
+  if (missionService.isSoftCritical(t.id)) return 'critical';
+  if (t.dueDate && t.dueDate < new Date().toISOString().slice(0, 10)) {
+    return 'overdue';
+  }
+  return null;
+}
 
 export function TasksPage() {
   const { account, can, positions, refreshSession } = useAuth();
   const navigate = useNavigate();
+  const { push: toast } = useToast();
   const { tasks: apiOrSeedTasks, reload, source } = useTasksList();
   const refresh = () => {
     reload();
@@ -32,7 +61,7 @@ export function TasksPage() {
   const [vis, setVis] = useState<MissionVisibility>('CHURCH');
   const [ctxType, setCtxType] = useState<TaskContextType>('NONE');
   const [grantAccess, setGrantAccess] = useState(false);
-  const [view, setView] = useState<'list' | 'board'>('board');
+  const [view, setView] = useState<WorkViewMode>('board');
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -103,13 +132,32 @@ export function TasksPage() {
     return all;
   }, [all, mine, statusFilter]);
 
+  async function markDoneQuick(t: WorkTask) {
+    const prior = {
+      status: t.status,
+      endDate: t.endDate,
+      outcomeNote: t.outcomeNote,
+      grantsSystemAccess: t.grantsSystemAccess,
+      accessRevokedAt: t.accessRevokedAt,
+    };
+    const r = await writeCompleteTask(t.id);
+    if (!r.ok) {
+      toast({ title: 'Could not complete', detail: r.reason, tone: 'danger' });
+      return;
+    }
+    refresh();
+    toast({
+      title: 'Marked done',
+      detail: t.title,
+      tone: 'success',
+      undo: () => {
+        void writeReopenTask(t.id, prior).then(() => refresh());
+      },
+    });
+  }
+
   if (!account || !canView) {
-    return (
-      <div className="panel">
-        <h2>Tasks</h2>
-        <ForbiddenState resource="TASK" />
-      </div>
-    );
+    return <ForbiddenState resource="TASK" action="VIEW" />;
   }
 
   function onCreate(e: FormEvent) {
@@ -129,7 +177,7 @@ export function TasksPage() {
     });
     setMsg(
       grantAccess
-        ? `Created ${t.title} — temp system access while active`
+        ? `Created ${t.title} — opens a ministry for the assignee until closed`
         : `Created ${t.title}`,
     );
     setTitle('');
@@ -141,28 +189,19 @@ export function TasksPage() {
     navigate(`/tasks/${t.id}`);
   }
 
+  const canQuickDone = (t: WorkTask) =>
+    (t.status === 'TODO' || t.status === 'IN_PROGRESS') &&
+    (canManage ||
+      t.ownerPersonId === account.personId ||
+      (t.helperPersonIds ?? []).includes(account.personId));
+
   return (
-    <div className="stack">
-      <div className="panel">
+    <div className="list-page">
+      <div className="list-chrome">
         <PageHead
-          title="Tasks"
-          subtitle="Primary + helpers · temp ENTER revoked on DONE/CANCEL · Option A close."
           actions={
             <>
-              <button
-                type="button"
-                className={`btn ${view === 'board' ? '' : 'ghost'}`}
-                onClick={() => setView('board')}
-              >
-                Board
-              </button>
-              <button
-                type="button"
-                className={`btn ${view === 'list' ? '' : 'ghost'}`}
-                onClick={() => setView('list')}
-              >
-                List
-              </button>
+              <WorkViewToggle value={view} onChange={setView} />
               {canManage && (
                 <button
                   type="button"
@@ -175,11 +214,18 @@ export function TasksPage() {
             </>
           }
         />
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="list-meta">
           <span className="badge">{activeMine.length} active for you</span>
-          <span className="badge">{open.length} open (visible)</span>
+          <span className="badge">{open.length} open</span>
         </div>
-        <div style={{ marginTop: '0.75rem' }}>
+        {activeMine.length > 0 && (
+          <div className="steward-banner warn" style={{ marginTop: '0.65rem' }}>
+            {activeMine.length} open task
+            {activeMine.length === 1 ? '' : 's'} temporarily open a ministry for
+            the assignee. Closing the task removes that access.
+          </div>
+        )}
+        <div className="list-toolbar">
           <FilterBar
             value={statusFilter}
             onChange={setStatusFilter}
@@ -208,88 +254,82 @@ export function TasksPage() {
         wide
       >
         <form className="stack" onSubmit={onCreate}>
-          <div className="field">
-            <label>Title</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Verb + object"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Primary assignee</label>
-            <select
-              value={ownerId}
-              onChange={(e) => setOwnerId(e.target.value)}
-              required
-            >
-              {people.map((p) => (
+          <TextField
+            label="Title"
+            name="task-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Verb + object"
+            required
+          />
+          <SelectField
+            label="Primary assignee"
+            name="task-owner"
+            value={ownerId}
+            onChange={(e) => setOwnerId(e.target.value)}
+            required
+          >
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.preferredName ?? p.fullName}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label="Helper (optional)"
+            name="task-helper"
+            value={helperId}
+            onChange={(e) => setHelperId(e.target.value)}
+          >
+            <option value="">None</option>
+            {people
+              .filter((p) => p.id !== ownerId)
+              .map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.preferredName ?? p.fullName}
                 </option>
               ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Helper (optional)</label>
-            <select
-              value={helperId}
-              onChange={(e) => setHelperId(e.target.value)}
-            >
-              <option value="">None</option>
-              {people
-                .filter((p) => p.id !== ownerId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.preferredName ?? p.fullName}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Due</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Context</label>
-            <select
-              value={ctxType}
-              onChange={(e) => setCtxType(e.target.value as TaskContextType)}
-            >
-              <option value="NONE">Standalone</option>
-              <option value="PROGRAM">Program</option>
-              <option value="EVENT">Event</option>
-              <option value="PROJECT">Project</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Visibility</label>
-            <select
-              value={vis}
-              onChange={(e) => setVis(e.target.value as MissionVisibility)}
-            >
-              <option value="CHURCH">General church</option>
-              <option value="MINISTRY_PRIVATE">Private</option>
-              <option value="SELECTIVE">Selective</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Description</label>
-            <input value={desc} onChange={(e) => setDesc(e.target.value)} />
-          </div>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={grantAccess}
-              onChange={(e) => setGrantAccess(e.target.checked)}
-            />
-            Grant temporary Main Church system entry while active
-          </label>
+          </SelectField>
+          <TextField
+            label="Due"
+            name="task-due"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+          <SelectField
+            label="Context"
+            name="task-ctx"
+            value={ctxType}
+            onChange={(e) => setCtxType(e.target.value as TaskContextType)}
+          >
+            <option value="NONE">Standalone</option>
+            <option value="PROGRAM">Program</option>
+            <option value="EVENT">Event</option>
+            <option value="PROJECT">Project</option>
+          </SelectField>
+          <SelectField
+            label="Visibility"
+            name="task-vis"
+            value={vis}
+            onChange={(e) => setVis(e.target.value as MissionVisibility)}
+          >
+            <option value="CHURCH">General church</option>
+            <option value="MINISTRY_PRIVATE">Private</option>
+            <option value="SELECTIVE">Selective</option>
+          </SelectField>
+          <TextAreaField
+            label="Description"
+            name="task-desc"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            rows={3}
+          />
+          <CheckboxField
+            label="While this task is open, let the assignee enter a ministry"
+            checked={grantAccess}
+            onChange={setGrantAccess}
+          />
           <button type="submit" className="btn">
             Create task
           </button>
@@ -297,7 +337,7 @@ export function TasksPage() {
       </Drawer>
 
       {filtered.length === 0 ? (
-        <div className="panel">
+        <div className="list-surface" style={{ padding: '1rem' }}>
           <EmptyState
             title="No tasks match"
             detail={
@@ -318,31 +358,60 @@ export function TasksPage() {
             }
           />
         </div>
+      ) : view === 'calendar' ? (
+        <div className="list-surface" style={{ padding: '1rem' }}>
+          <WorkItemViews
+            items={filtered.map((t) => taskToWorkItem(t))}
+            view="calendar"
+            emptyTitle="No tasks match"
+          />
+        </div>
       ) : view === 'board' ? (
-        <TaskBoard tasks={filtered} showOwner={canManage} />
+        <TaskBoard
+          tasks={filtered}
+          showOwner={canManage}
+          canQuickDone={canQuickDone}
+          onDone={markDoneQuick}
+        />
       ) : (
-        <>
-          <div className="panel">
-            <h3>
-              {statusFilter === 'mine' ? 'Your tasks' : 'Filtered tasks'}
-            </h3>
-            <TaskTable
-              tasks={statusFilter === 'mine' ? mine : filtered}
-              showOwner={canManage}
-            />
-          </div>
-        </>
+        <div className="list-surface" style={{ padding: '1rem 1.1rem' }}>
+          <h3 style={{ marginTop: 0 }}>
+            {statusFilter === 'mine' ? 'Your tasks' : 'Filtered tasks'}
+          </h3>
+          <TaskTable
+            tasks={statusFilter === 'mine' ? mine : filtered}
+            showOwner={canManage}
+            canQuickDone={canQuickDone}
+            onDone={markDoneQuick}
+          />
+        </div>
       )}
     </div>
   );
 }
 
+function UrgencyBadge({ task }: { task: WorkTask }) {
+  const u = taskUrgency(task);
+  if (!u) return null;
+  const label =
+    u === 'overdue'
+      ? 'Overdue'
+      : u === 'critical'
+        ? 'Waiting on deps'
+        : 'Opens ministry';
+  return <span className="badge">{label}</span>;
+}
+
 function TaskBoard({
   tasks,
   showOwner,
+  canQuickDone,
+  onDone,
 }: {
   tasks: ReturnType<typeof missionService.listTasks>;
   showOwner?: boolean;
+  canQuickDone: (t: WorkTask) => boolean;
+  onDone: (t: WorkTask) => void;
 }) {
   const cols = [
     { key: 'TODO' as const, label: 'To do' },
@@ -369,15 +438,26 @@ function TaskBoard({
               </p>
             ) : (
               rows.map((t) => (
-                <div key={t.id} className="mission-card">
+                <div
+                  key={t.id}
+                  className={`mission-card${
+                    missionService.isSoftCritical(t.id) ? ' soft-critical' : ''
+                  }`}
+                >
                   <div className="kind">
                     {t.grantsSystemAccess
-                      ? 'Temp ENTER'
+                      ? 'Opens ministry'
                       : t.accessRevokedAt
-                        ? 'Revoked'
+                        ? 'Access ended'
                         : t.contextType === 'NONE'
                           ? 'Task'
-                          : t.contextType}
+                          : t.contextType === 'PROGRAM'
+                            ? 'Program'
+                            : t.contextType === 'EVENT'
+                              ? 'Event'
+                              : t.contextType === 'PROJECT'
+                                ? 'Project'
+                                : 'Task'}
                   </div>
                   <strong>
                     <Link to={`/tasks/${t.id}`} style={{ color: 'inherit' }}>
@@ -391,7 +471,22 @@ function TaskBoard({
                     {t.dueDate ? ` · due ${t.dueDate}` : ''}
                     {t.status === 'CANCELLED' ? ' · cancelled' : ''}
                   </div>
-                  <StatusPill status={t.status}>{t.status}</StatusPill>
+                  <div
+                    className="row"
+                    style={{ gap: '0.35rem', flexWrap: 'wrap' }}
+                  >
+                    <StatusPill status={t.status} />
+                    <UrgencyBadge task={t} />
+                    {canQuickDone(t) && (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => onDone(t)}
+                      >
+                        Done
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -405,9 +500,13 @@ function TaskBoard({
 function TaskTable({
   tasks,
   showOwner = false,
+  canQuickDone,
+  onDone,
 }: {
   tasks: ReturnType<typeof missionService.listTasks>;
   showOwner?: boolean;
+  canQuickDone: (t: WorkTask) => boolean;
+  onDone: (t: WorkTask) => void;
 }) {
   if (tasks.length === 0) {
     return <EmptyState title="No tasks" detail="Nothing in this list." />;
@@ -422,13 +521,22 @@ function TaskTable({
           <th>Context</th>
           <th>System</th>
           <th>Status</th>
+          <th>Urgency</th>
           <th>Access</th>
           <th>Due</th>
+          <th />
         </tr>
       </thead>
       <tbody>
         {tasks.map((t) => (
-          <tr key={t.id}>
+          <tr
+            key={t.id}
+            className={
+              missionService.isSoftCritical(t.id)
+                ? 'soft-critical-row'
+                : undefined
+            }
+          >
             <td>
               <Link to={`/tasks/${t.id}`}>
                 <strong>{t.title}</strong>
@@ -462,18 +570,32 @@ function TaskTable({
                 : '—'}
             </td>
             <td>
-              <StatusPill status={t.status}>{t.status}</StatusPill>
+              <StatusPill status={t.status} />
+            </td>
+            <td>
+              <UrgencyBadge task={t} />
             </td>
             <td>
               {t.grantsSystemAccess ? (
-                <StatusPill tone="success">Active grant</StatusPill>
+                <StatusPill tone="success">Opens ministry</StatusPill>
               ) : t.accessRevokedAt ? (
-                <StatusPill tone="neutral">Revoked</StatusPill>
+                <StatusPill tone="neutral">Access ended</StatusPill>
               ) : (
                 '—'
               )}
             </td>
             <td>{t.dueDate ?? '—'}</td>
+            <td>
+              {canQuickDone(t) && (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => onDone(t)}
+                >
+                  Done
+                </button>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
