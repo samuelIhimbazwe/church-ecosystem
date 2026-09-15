@@ -1,7 +1,18 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import {
+  WorkItemViews,
+  WorkViewToggle,
+  type WorkViewMode,
+} from '../components/WorkItemViews';
 import { Drawer } from '../components/ui/Drawer';
+import {
+  CheckboxField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
@@ -13,7 +24,9 @@ import type {
   EventRegistrationMode,
   MissionVisibility,
 } from '../domain/types';
+import { eventSpendPolicyOk } from '../domain/eventOps';
 import { eventTypeLabel } from '../domain/permissions';
+import { eventToWorkItem } from '../domain/workItem';
 import { useEventsList } from '../hooks/useMissionLists';
 import { missionService, systemsService } from '../services';
 
@@ -40,6 +53,7 @@ export function EventsPage() {
   const [msg, setMsg] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [view, setView] = useState<WorkViewMode>('list');
   const canView = can('EVENT', 'VIEW');
   const canManage = can('EVENT', 'MANAGE');
 
@@ -54,6 +68,8 @@ export function EventsPage() {
   const [location, setLocation] = useState('');
   const [desc, setDesc] = useState('');
   const [projectId, setProjectId] = useState('');
+  const [willSpend, setWillSpend] = useState(false);
+  const [plannedCost, setPlannedCost] = useState('');
 
   const pending = events.filter((e) => e.status === 'PENDING_APPROVAL');
   const projects = missionService.listProjects({ viewerSystemId: 'sys-main' });
@@ -83,41 +99,57 @@ export function EventsPage() {
   function onCreate(e: FormEvent) {
     e.preventDefault();
     if (!canManage || !name.trim()) return;
-    const ev = missionService.createEvent({
-      name: name.trim(),
-      type: etype,
-      ownerSystemId: 'sys-main',
-      startsAt: new Date(startsAt).toISOString(),
-      location: location || undefined,
-      description: desc || undefined,
-      visibility: vis,
-      registrationMode: regMode,
-      capacity:
-        regMode === 'REGISTRATION_REQUIRED'
-          ? Number(capacity) || undefined
-          : undefined,
-      beyondOwnerScope: beyond,
+    const planned = plannedCost ? Number(plannedCost) : undefined;
+    const spendGate = eventSpendPolicyOk({
+      willSpend,
       projectId: projectId || undefined,
-      createdByPersonId: account!.personId,
+      plannedCost: planned,
     });
-    setMsg(
-      beyond
-        ? `Created ${ev.name} — pending upper approvals`
-        : `Created ${ev.name} — confirmed (in-scope)`,
-    );
-    setName('');
-    setProjectId('');
-    setCreateOpen(false);
-    refresh();
-    navigate(`/events/${ev.id}`);
+    if (!spendGate.ok) {
+      setMsg(spendGate.reason ?? 'Spend policy failed');
+      return;
+    }
+    try {
+      const ev = missionService.createEvent({
+        name: name.trim(),
+        type: etype,
+        ownerSystemId: 'sys-main',
+        startsAt: new Date(startsAt).toISOString(),
+        location: location || undefined,
+        description: desc || undefined,
+        visibility: vis,
+        registrationMode: regMode,
+        capacity:
+          regMode === 'REGISTRATION_REQUIRED'
+            ? Number(capacity) || undefined
+            : undefined,
+        beyondOwnerScope: beyond,
+        projectId: projectId || undefined,
+        willSpend,
+        plannedCost: planned,
+        createdByPersonId: account!.personId,
+      });
+      setMsg(
+        beyond
+          ? `Created ${ev.name} — pending upper approvals`
+          : `Created ${ev.name} — confirmed (in-scope)`,
+      );
+      setName('');
+      setProjectId('');
+      setWillSpend(false);
+      setPlannedCost('');
+      setCreateOpen(false);
+      refresh();
+      navigate(`/events/${ev.id}`);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Create failed');
+    }
   }
 
   return (
     <div className="stack">
       <div className="panel">
         <PageHead
-          title="Events"
-          subtitle="Dated occasions. In-scope confirms immediately; beyond-scope needs every upper level."
           actions={
             canManage ? (
               <button
@@ -135,28 +167,31 @@ export function EventsPage() {
           <span className="badge">{pending.length} pending</span>
         </div>
         <div style={{ marginTop: '0.75rem' }}>
-          <FilterBar
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { value: 'all', label: 'All', count: events.length },
-              {
-                value: 'pending',
-                label: 'Pending',
-                count: pending.length,
-              },
-              {
-                value: 'confirmed',
-                label: 'Confirmed',
-                count: events.filter((e) => e.status === 'CONFIRMED').length,
-              },
-              {
-                value: 'cancelled',
-                label: 'Cancelled',
-                count: events.filter((e) => e.status === 'CANCELLED').length,
-              },
-            ]}
-          />
+          <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+            <FilterBar
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: 'All', count: events.length },
+                {
+                  value: 'pending',
+                  label: 'Pending',
+                  count: pending.length,
+                },
+                {
+                  value: 'confirmed',
+                  label: 'Confirmed',
+                  count: events.filter((e) => e.status === 'CONFIRMED').length,
+                },
+                {
+                  value: 'cancelled',
+                  label: 'Cancelled',
+                  count: events.filter((e) => e.status === 'CANCELLED').length,
+                },
+              ]}
+            />
+            <WorkViewToggle value={view} onChange={setView} />
+          </div>
         </div>
       </div>
 
@@ -190,105 +225,111 @@ export function EventsPage() {
         wide
       >
         <form className="stack" onSubmit={onCreate}>
-          <div className="field">
-            <label>Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Type</label>
-            <select
-              value={etype}
-              onChange={(e) => setEtype(e.target.value as ChurchEventType)}
-            >
-              {EVENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {eventTypeLabel(t)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Starts</label>
-            <input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Link to project (optional)</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">None</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Location</label>
-            <input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Registration mode</label>
-            <select
-              value={regMode}
-              onChange={(e) =>
-                setRegMode(e.target.value as EventRegistrationMode)
-              }
-            >
-              <option value="ANNOUNCEMENT_ONLY">Announcement only</option>
-              <option value="REGISTRATION_REQUIRED">
-                Registration required
+          <TextField
+            label="Name"
+            name="event-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <SelectField
+            label="Type"
+            name="event-type"
+            value={etype}
+            onChange={(e) => setEtype(e.target.value as ChurchEventType)}
+          >
+            {EVENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {eventTypeLabel(t)}
               </option>
-            </select>
-          </div>
-          {regMode === 'REGISTRATION_REQUIRED' && (
-            <div className="field">
-              <label>Capacity</label>
-              <input
-                type="number"
-                min={1}
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-              />
-            </div>
-          )}
-          <div className="field">
-            <label>Visibility</label>
-            <select
-              value={vis}
-              onChange={(e) => setVis(e.target.value as MissionVisibility)}
-            >
-              <option value="CHURCH">General church</option>
-              <option value="MINISTRY_PRIVATE">Private</option>
-              <option value="SELECTIVE">Selective</option>
-            </select>
-          </div>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={beyond}
-              onChange={(e) => setBeyond(e.target.checked)}
+            ))}
+          </SelectField>
+          <TextField
+            label="Starts"
+            name="event-starts"
+            type="datetime-local"
+            value={startsAt}
+            onChange={(e) => setStartsAt(e.target.value)}
+            required
+          />
+          <SelectField
+            label="Link to project (optional)"
+            name="event-project"
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            <option value="">None</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </SelectField>
+          <CheckboxField
+            label="Will spend (requires project or planned cost)"
+            checked={willSpend}
+            onChange={setWillSpend}
+          />
+          {willSpend && !projectId && (
+            <TextField
+              label="Planned cost (RWF)"
+              name="event-cost"
+              type="number"
+              min={1}
+              value={plannedCost}
+              onChange={(e) => setPlannedCost(e.target.value)}
+              required
             />
-            Beyond owner scope (needs upper approvals)
-          </label>
-          <div className="field">
-            <label>Description</label>
-            <input value={desc} onChange={(e) => setDesc(e.target.value)} />
-          </div>
+          )}
+          <TextField
+            label="Location"
+            name="event-location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+          <SelectField
+            label="Registration mode"
+            name="event-reg"
+            value={regMode}
+            onChange={(e) =>
+              setRegMode(e.target.value as EventRegistrationMode)
+            }
+          >
+            <option value="ANNOUNCEMENT_ONLY">Announcement only</option>
+            <option value="REGISTRATION_REQUIRED">Registration required</option>
+          </SelectField>
+          {regMode === 'REGISTRATION_REQUIRED' && (
+            <TextField
+              label="Capacity"
+              name="event-capacity"
+              type="number"
+              min={1}
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+            />
+          )}
+          <SelectField
+            label="Visibility"
+            name="event-vis"
+            value={vis}
+            onChange={(e) => setVis(e.target.value as MissionVisibility)}
+          >
+            <option value="CHURCH">General church</option>
+            <option value="MINISTRY_PRIVATE">Private</option>
+            <option value="SELECTIVE">Selective</option>
+          </SelectField>
+          <CheckboxField
+            label="Beyond owner scope (needs upper approvals)"
+            checked={beyond}
+            onChange={setBeyond}
+          />
+          <TextAreaField
+            label="Description"
+            name="event-desc"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            rows={3}
+          />
           <button type="submit" className="btn">
             Create event
           </button>
@@ -296,7 +337,13 @@ export function EventsPage() {
       </Drawer>
 
       <div className="panel">
-        {filtered.length === 0 ? (
+        {view !== 'list' ? (
+          <WorkItemViews
+            items={filtered.map((e) => eventToWorkItem(e))}
+            view={view}
+            emptyTitle="No events match"
+          />
+        ) : filtered.length === 0 ? (
           <EmptyState
             title="No events match"
             detail={
