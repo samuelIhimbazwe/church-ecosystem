@@ -140,7 +140,10 @@ export interface UserAccount {
 
 export type SystemRole =
   | 'CHURCH_LEADER'
+  | 'PASTOR'
+  /** @deprecated Prefer PASTOR — kept for older seed / DB rows. */
   | 'ASSISTANT_PASTOR'
+  | 'CATECHIST'
   | 'CHURCH_SECRETARY'
   | 'CHURCH_TREASURER'
   | 'CHOIR_LEADER'
@@ -312,6 +315,11 @@ export interface Position {
    */
   ministryOffice?: MissionLeaderOffice;
   /**
+   * Appointed System Admin for `systemId` — operate the software (accounts,
+   * invites, role plumbing), not domain data dumps. Never implies finance/sacraments.
+   */
+  systemAdmin?: boolean;
+  /**
    * Governance positions (pastor, secretary) may open every system.
    * Otherwise access is limited to `systemId` when set.
    */
@@ -404,7 +412,11 @@ export type Resource =
   | 'DEACON_CARE'
   | 'DEACON_FINANCE'
   | 'MINISTRY_FINANCE'
-  | 'AUDIT';
+  | 'AUDIT'
+  /** Software config for a system (invites, role plumbing) — not domain ledgers. */
+  | 'SYSTEM_CONFIG'
+  /** Itorero Board of Directors meetings & decisions. */
+  | 'BOARD';
 
 export type Action =
   | 'ENTER'
@@ -595,6 +607,10 @@ export interface Program {
   inKind?: import('./stewardship').MissionInKind[];
   envelopePeriod?: string;
   phaseRenewals?: import('./stewardship').MissionPhaseRenewal[];
+  healthSnapshots?: import('./stewardship').MissionHealthSnapshot[];
+  blockers?: import('./deliveryRisk').MissionBlocker[];
+  /** W5 impact: objectives → indicators → values. */
+  objectives?: import('./impact').ProgramObjective[];
 }
 
 export type ProgramEnrollmentStatus =
@@ -628,6 +644,11 @@ export interface Activity {
   startsAt: string;
   endsAt?: string;
   location?: string;
+  /** When set, Session Mode is closed — no further attendance edits. */
+  sessionClosedAt?: string;
+  /** Soft recurring series (W6). */
+  seriesId?: string;
+  seriesLabel?: string;
 }
 
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
@@ -712,6 +733,15 @@ export interface ChurchEvent {
   collaboratorPersonIds?: string[];
   /** Prepare → deliver → close operating phase. */
   lifecyclePhase?: EventLifecyclePhase;
+  /** When true, requires projectId or plannedCost (spend policy). */
+  willSpend?: boolean;
+  /** Light event stewardship planned cost (when not linked to a project). */
+  plannedCost?: number;
+  /**
+   * Calendar taxonomy for Church Leader awareness / approve.
+   * MINISTRY_INTERNAL stays inside ministry; others need Itorero date yes.
+   */
+  calendarScope?: ChurchCalendarScope;
 }
 
 export type EventRegistrationStatus =
@@ -728,6 +758,10 @@ export interface EventRegistration {
   status: EventRegistrationStatus;
   registeredOn: string;
   attendedAt?: string;
+  /** When promoted from waitlist. */
+  promotedAt?: string;
+  /** Seat offer deadline (ISO); after this, seat returns to waitlist FIFO. */
+  offerExpiresAt?: string;
 }
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
@@ -765,6 +799,12 @@ export interface WorkTask {
   endDate?: string;
   /** Optional close note (Option A — no guided next steps). */
   outcomeNote?: string;
+  /** W4: task IDs this task depends on (soft gate). */
+  dependsOn?: string[];
+  /** W4 RACI: Accountable (A). Responsible = owner + helpers. */
+  accountablePersonId?: string;
+  /** W4 RACI: Consulted/Informed watchers. */
+  watcherPersonIds?: string[];
 }
 
 /**
@@ -821,6 +861,8 @@ export interface ChurchProject {
   inKind?: import('./stewardship').MissionInKind[];
   envelopePeriod?: string;
   phaseRenewals?: import('./stewardship').MissionPhaseRenewal[];
+  healthSnapshots?: import('./stewardship').MissionHealthSnapshot[];
+  blockers?: import('./deliveryRisk').MissionBlocker[];
 }
 
 /* ─── Choir System domain (peer app data; Person IDs shared) ─── */
@@ -946,6 +988,14 @@ export type ChoirLiability = MinistryLiability;
 export type ChoirContributionDrive = MinistryContributionDrive;
 export type ChoirContributionGoal = MinistryContributionGoal;
 
+export type {
+  ChoirFamilyPaymentRail,
+  ChoirOfficePaymentRail,
+  ChoirContributionHandoff,
+  ChoirContributionEvent,
+  ChoirContribNotification,
+} from './choirContributionPipeline';
+
 /* ─── Worship System domain (peer of Choir under Music) ─── */
 
 /** Worship keeps its own office set (not the choir admin/ops model). */
@@ -1004,7 +1054,31 @@ export type DeaconOffice =
   | 'TREASURER'
   | 'MEMBER';
 
-export type DeaconCaseStatus = 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+export type DeaconCaseStatus =
+  | 'OPEN'
+  | 'HANDLING'
+  | 'WILL_HANDLE'
+  | 'CLOSED'
+  /** @deprecated Prefer HANDLING */
+  | 'IN_PROGRESS';
+
+/** Member wellbeing category (Leader sees type, not private clinical detail). */
+export type WellbeingCategory =
+  | 'NORMAL'
+  | 'SICK'
+  | 'DIED_OR_BEREAVED'
+  | 'OTHER_ISSUE'
+  | 'WEDDING'
+  | 'BAPTISM'
+  | 'BREAKTHROUGH';
+
+export type CareSubmitterRole =
+  | 'MEMBER'
+  | 'CATECHIST'
+  | 'SECRETARY'
+  | 'DEACON';
+
+export type CareEscalateTo = 'CATECHIST' | 'PASTOR' | 'CHURCH_LEADER';
 
 export interface DeaconCareCase {
   id: string;
@@ -1015,7 +1089,23 @@ export interface DeaconCareCase {
   priority: 'LOW' | 'NORMAL' | 'HIGH';
   openedOn: string;
   assignedPersonId?: string;
+  /** @deprecated Prefer summary + privateNotes */
   notes?: string;
+  category: WellbeingCategory;
+  /** Required name when category is OTHER_ISSUE or BREAKTHROUGH */
+  categoryDetail?: string;
+  /** Upward-safe summary (situation type) — safe for Leader/pastor view */
+  summary?: string;
+  /** Deacon-only / restricted clinical or intimate detail */
+  privateNotes?: string;
+  submittedByPersonId?: string;
+  submittedByRole?: CareSubmitterRole;
+  /** Who should see this after deacons prioritize */
+  escalateTo?: CareEscalateTo;
+  sickSince?: string;
+  sickLocation?: 'HOSPITAL' | 'HOME' | 'OTHER';
+  /** Recovery status — not diagnosis */
+  sickStatus?: string;
 }
 
 export interface DeaconVisit {
@@ -1353,4 +1443,219 @@ export interface ProtocolSchedulingRules {
   hardMax: number;
   defaultTeamSize: number;
   avoidChoirConflicts: boolean;
+}
+
+/** President/vice publish for Itorero oversight — not live ledger access. */
+export type SharedReportPackStatus = 'PUBLISHED' | 'WITHDRAWN';
+
+export interface SharedReportPack {
+  id: string;
+  systemId: SystemId;
+  title: string;
+  summary: string;
+  /** Optional structured highlights for the report surface. */
+  highlights?: string[];
+  publishedAt: string;
+  publishedByPersonId: string;
+  status: SharedReportPackStatus;
+}
+
+/**
+ * When the Itorero funded a ministry/org — accountability report
+ * (where/how spent, operations, results, impact).
+ */
+export type ChurchAssistanceReportStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'ACCEPTED';
+
+export interface ChurchAssistanceReport {
+  id: string;
+  systemId: SystemId;
+  amountRwf: number;
+  purpose: string;
+  whereSpent: string;
+  howSpent: string;
+  operations: string;
+  results: string;
+  impact: string;
+  assistedOn: string;
+  reportedAt: string;
+  reportedByPersonId: string;
+  status: ChurchAssistanceReportStatus;
+}
+
+/** Itorero Board of Directors — authority lives in meetings. */
+export type BoardMeetingStatus = 'SCHEDULED' | 'HELD' | 'CANCELLED';
+
+export type BoardDecisionStatus = 'OPEN' | 'DONE';
+
+export interface BoardDecision {
+  id: string;
+  summary: string;
+  ownerPersonId?: string;
+  dueDate?: string;
+  status: BoardDecisionStatus;
+  /** Optional link to a mission task id when follow-up is tracked in Tasks. */
+  followUpTaskId?: string;
+}
+
+export interface BoardMeeting {
+  id: string;
+  title: string;
+  scheduledAt: string;
+  calledByPersonId: string;
+  status: BoardMeetingStatus;
+  /** @deprecated Prefer agendaItems — kept for older seed rows. */
+  agenda: string[];
+  /** Structured agenda: Leader may freeze for Board or decide alone. */
+  agendaItems?: BoardAgendaItem[];
+  /** Expected / recorded attendees (high leaders, ministry presidents/vice, deacons). */
+  attendeePersonIds: string[];
+  decisions: BoardDecision[];
+  notes?: string;
+  heldAt?: string;
+}
+
+/** Between-meeting escalation: only Church Leader freezes for Board; else he decides. */
+export type BoardAgendaItemState =
+  | 'OPEN'
+  | 'FROZEN'
+  | 'DECIDED'
+  | 'DEFERRED';
+
+export interface BoardAgendaItem {
+  id: string;
+  text: string;
+  state: BoardAgendaItemState;
+  /** Who brought the big/new item (catechist / pastor / officer). */
+  raisedByPersonId?: string;
+  decidedAt?: string;
+  decidedByPersonId?: string;
+  decisionId?: string;
+  notes?: string;
+}
+
+/* ─── Pastoral pathways, discipline, letters, pulpit (Church Leader P1) ─── */
+
+export type PersonPathwayKind =
+  | 'TRANSFER_IN'
+  | 'TRANSFER_OUT'
+  | 'BAPTISM_TRACK'
+  | 'DEDICATION'
+  | 'RESTORATION'
+  | 'OTHER';
+
+export type PersonPathwayStatus =
+  | 'OPEN'
+  | 'IN_PROGRESS'
+  | 'READY'
+  | 'COMPLETED'
+  | 'WITHDRAWN';
+
+export interface PersonPathway {
+  id: string;
+  personId: string;
+  kind: PersonPathwayKind;
+  status: PersonPathwayStatus;
+  label: string;
+  openedOn: string;
+  openedByPersonId?: string;
+  notes?: string;
+  /** Baptism track: Leader must confirm each name before rite. */
+  leaderConfirmedAt?: string;
+  leaderConfirmedByPersonId?: string;
+}
+
+export type DisciplineCaseStatus =
+  | 'OPEN'
+  | 'IN_PROGRESS'
+  | 'AWAITING_LEADER'
+  | 'RESOLVED'
+  | 'RESTORED';
+
+export interface DisciplineCase {
+  id: string;
+  personId: string;
+  title: string;
+  status: DisciplineCaseStatus;
+  openedOn: string;
+  openedByPersonId: string;
+  /** Pastor or catechist may start; final standing needs Leader. */
+  summary: string;
+  privateNotes?: string;
+  /** Standing outcome set only by Church Leader */
+  finalStanding?: 'NO_CHANGE' | 'RESTRICTED' | 'SUSPENDED' | 'RESTORED';
+  resolvedAt?: string;
+  resolvedByPersonId?: string;
+  mayServe?: boolean;
+  mayTakeCommunion?: boolean;
+}
+
+export type TransferLetterStatus =
+  | 'DRAFT'
+  | 'AWAITING_LEADER'
+  | 'SIGNED'
+  | 'SENT'
+  | 'CANCELLED';
+
+/** Transfer letter OUT — Church Leader only signs. */
+export interface TransferLetterOut {
+  id: string;
+  personId: string;
+  destinationChurch: string;
+  status: TransferLetterStatus;
+  draftedByPersonId: string;
+  draftedOn: string;
+  signedByPersonId?: string;
+  signedOn?: string;
+  note?: string;
+}
+
+export type PulpitSlotStatus =
+  | 'DRAFT'
+  | 'CATECHIST_REVIEW'
+  | 'AWAITING_LEADER'
+  | 'APPROVED'
+  | 'CANCELLED';
+
+/** Evangelism prepares → Catechist reviews → Church Leader approves. */
+export interface PulpitSlot {
+  id: string;
+  serviceDate: string;
+  serviceLabel: string;
+  preacherPersonId: string;
+  isGuest?: boolean;
+  guestName?: string;
+  status: PulpitSlotStatus;
+  preparedByPersonId?: string;
+  catechistReviewedByPersonId?: string;
+  catechistReviewedAt?: string;
+  approvedByPersonId?: string;
+  approvedAt?: string;
+  notes?: string;
+}
+
+/** Church-wide / sanctuary / large ministry date taxonomy for calendar. */
+export type ChurchCalendarScope =
+  | 'MINISTRY_INTERNAL'
+  | 'LARGE_MINISTRY'
+  | 'SANCTUARY'
+  | 'CHURCH_WIDE';
+
+export type CalendarConflictStatus =
+  | 'OPEN'
+  | 'RESOLVING'
+  | 'RESOLVED'
+  | 'ESCALATED';
+
+export interface CalendarConflictCase {
+  id: string;
+  title: string;
+  date: string;
+  eventIds: string[];
+  status: CalendarConflictStatus;
+  notes?: string;
+  resolvedByPersonId?: string;
+  resolvedAt?: string;
 }
