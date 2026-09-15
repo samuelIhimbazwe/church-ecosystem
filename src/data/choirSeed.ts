@@ -189,16 +189,6 @@ export const CHOIR_DUTIES: ChoirDutySlot[] = [
     status: 'ASSIGNED',
   },
   {
-    id: 'duty-concert-usher',
-    orgUnitId: IJWI,
-    label: 'Thanksgiving Concert',
-    eventId: 'evt-choir-concert-2026',
-    serviceDate: '2026-11-22',
-    role: 'USHER',
-    personId: 'p-member',
-    status: 'ASSIGNED',
-  },
-  {
     id: 'duty-sunday-section',
     orgUnitId: IJWI,
     label: 'Sunday service',
