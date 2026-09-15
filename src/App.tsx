@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAdminTools } from './components/RequireAdminTools';
 import { ToastProvider } from './components/ui/Toast';
+import { ThemeProvider } from './theme/theme';
 import { SystemScopeGuard } from './navigation/SystemScopeGuard';
 import { AccessEnginePage } from './pages/AccessEnginePage';
 import { ActivitySessionPage } from './pages/ActivitySessionPage';
@@ -12,6 +13,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { EventDetailPage } from './pages/EventDetailPage';
 import { EventsPage } from './pages/EventsPage';
 import { BoardPage } from './pages/BoardPage';
+import { BoardFollowUpPage } from './pages/BoardFollowUpPage';
+import { BoardMeetingPage } from './pages/BoardMeetingPage';
 import { PastoralDeskPage } from './pages/PastoralDeskPage';
 import { SystemAdminPage } from './pages/SystemAdminPage';
 import { InboxPage } from './pages/InboxPage';
@@ -165,6 +168,13 @@ function ShellWithTitle() {
   if (location.pathname.startsWith('/inbox')) {
     title = 'Inbox';
     subtitle = 'Approvals, handoffs, and work that needs you.';
+  } else if (location.pathname.startsWith('/board/meetings')) {
+    title = 'Board meeting';
+    subtitle =
+      'Agenda detail, attendees, and Leader actions (Freeze for Board or Decide now).';
+  } else if (location.pathname.startsWith('/board/follow-ups')) {
+    title = 'Follow-up report';
+    subtitle = 'Progress and results for a Board decision — review before Mark done.';
   } else if (location.pathname.startsWith('/board')) {
     title = 'Board';
     subtitle = 'Meetings, decisions, and follow-ups for church leadership.';
@@ -340,6 +350,7 @@ function ChoirMissionPage() {
 
 export default function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <ToastProvider>
       <SystemScopeGuard>
@@ -967,6 +978,14 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="inbox" element={<InboxPage />} />
             <Route path="board" element={<BoardPage />} />
+            <Route
+              path="board/meetings/:meetingId"
+              element={<BoardMeetingPage />}
+            />
+            <Route
+              path="board/follow-ups/:decisionId"
+              element={<BoardFollowUpPage />}
+            />
             <Route path="pastoral" element={<PastoralDeskPage />} />
             <Route path="system-admin" element={<SystemAdminPage />} />
             <Route path="finance" element={<FinanceHomePage />} />
@@ -1042,5 +1061,6 @@ export default function App() {
       </SystemScopeGuard>
       </ToastProvider>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
