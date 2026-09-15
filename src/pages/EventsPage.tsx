@@ -1,51 +1,27 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { MissionCreateDrawer } from '../components/MissionCreateDrawer';
 import {
   WorkItemViews,
   WorkViewToggle,
   type WorkViewMode,
 } from '../components/WorkItemViews';
-import { Drawer } from '../components/ui/Drawer';
-import {
-  CheckboxField,
-  SelectField,
-  TextAreaField,
-  TextField,
-} from '../components/ui/Field';
 import { FilterBar, PageHead } from '../components/ui/FilterBar';
 import {
   EmptyState,
   ForbiddenState,
   StatusPill,
 } from '../components/ui/StatusPill';
-import type {
-  ChurchEventType,
-  EventRegistrationMode,
-  MissionVisibility,
-} from '../domain/types';
-import { eventSpendPolicyOk } from '../domain/eventOps';
 import { eventTypeLabel } from '../domain/permissions';
 import { eventToWorkItem } from '../domain/workItem';
 import { useEventsList } from '../hooks/useMissionLists';
-import { missionService, systemsService } from '../services';
-
-const EVENT_TYPES: ChurchEventType[] = [
-  'CONFERENCE',
-  'BAPTISM',
-  'WEDDING',
-  'CONCERT',
-  'RETREAT',
-  'SEMINAR',
-  'SPECIAL_SERVICE',
-  'CAMPAIGN',
-  'OTHER',
-];
+import { isChurchLeader, missionService, systemsService } from '../services';
 
 export function EventsPage() {
-  const { can, account, refreshSession } = useAuth();
+  const { can, account, roles, refreshSession } = useAuth();
   const navigate = useNavigate();
-  const { events, reload } = useEventsList();
+  const { events, reload, source } = useEventsList();
   const refresh = () => {
     reload();
     refreshSession();
@@ -56,23 +32,9 @@ export function EventsPage() {
   const [view, setView] = useState<WorkViewMode>('list');
   const canView = can('EVENT', 'VIEW');
   const canManage = can('EVENT', 'MANAGE');
-
-  const [name, setName] = useState('');
-  const [etype, setEtype] = useState<ChurchEventType>('OTHER');
-  const [vis, setVis] = useState<MissionVisibility>('CHURCH');
-  const [regMode, setRegMode] =
-    useState<EventRegistrationMode>('ANNOUNCEMENT_ONLY');
-  const [capacity, setCapacity] = useState('50');
-  const [beyond, setBeyond] = useState(false);
-  const [startsAt, setStartsAt] = useState('2026-09-21T10:00');
-  const [location, setLocation] = useState('');
-  const [desc, setDesc] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const [willSpend, setWillSpend] = useState(false);
-  const [plannedCost, setPlannedCost] = useState('');
+  const churchLead = isChurchLeader(roles);
 
   const pending = events.filter((e) => e.status === 'PENDING_APPROVAL');
-  const projects = missionService.listProjects({ viewerSystemId: 'sys-main' });
   const filtered = useMemo(() => {
     if (statusFilter === 'all') return events;
     if (statusFilter === 'pending') {
@@ -94,56 +56,6 @@ export function EventsPage() {
         <ForbiddenState resource="EVENT" />
       </div>
     );
-  }
-
-  function onCreate(e: FormEvent) {
-    e.preventDefault();
-    if (!canManage || !name.trim()) return;
-    const planned = plannedCost ? Number(plannedCost) : undefined;
-    const spendGate = eventSpendPolicyOk({
-      willSpend,
-      projectId: projectId || undefined,
-      plannedCost: planned,
-    });
-    if (!spendGate.ok) {
-      setMsg(spendGate.reason ?? 'Spend policy failed');
-      return;
-    }
-    try {
-      const ev = missionService.createEvent({
-        name: name.trim(),
-        type: etype,
-        ownerSystemId: 'sys-main',
-        startsAt: new Date(startsAt).toISOString(),
-        location: location || undefined,
-        description: desc || undefined,
-        visibility: vis,
-        registrationMode: regMode,
-        capacity:
-          regMode === 'REGISTRATION_REQUIRED'
-            ? Number(capacity) || undefined
-            : undefined,
-        beyondOwnerScope: beyond,
-        projectId: projectId || undefined,
-        willSpend,
-        plannedCost: planned,
-        createdByPersonId: account!.personId,
-      });
-      setMsg(
-        beyond
-          ? `Created ${ev.name} — pending upper approvals`
-          : `Created ${ev.name} — confirmed (in-scope)`,
-      );
-      setName('');
-      setProjectId('');
-      setWillSpend(false);
-      setPlannedCost('');
-      setCreateOpen(false);
-      refresh();
-      navigate(`/events/${ev.id}`);
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : 'Create failed');
-    }
   }
 
   return (
@@ -217,124 +129,6 @@ export function EventsPage() {
           </ul>
         </div>
       )}
-
-      <Drawer
-        open={createOpen}
-        title="Create event"
-        onClose={() => setCreateOpen(false)}
-        wide
-      >
-        <form className="stack" onSubmit={onCreate}>
-          <TextField
-            label="Name"
-            name="event-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <SelectField
-            label="Type"
-            name="event-type"
-            value={etype}
-            onChange={(e) => setEtype(e.target.value as ChurchEventType)}
-          >
-            {EVENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {eventTypeLabel(t)}
-              </option>
-            ))}
-          </SelectField>
-          <TextField
-            label="Starts"
-            name="event-starts"
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            required
-          />
-          <SelectField
-            label="Link to project (optional)"
-            name="event-project"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            <option value="">None</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </SelectField>
-          <CheckboxField
-            label="Will spend (requires project or planned cost)"
-            checked={willSpend}
-            onChange={setWillSpend}
-          />
-          {willSpend && !projectId && (
-            <TextField
-              label="Planned cost (RWF)"
-              name="event-cost"
-              type="number"
-              min={1}
-              value={plannedCost}
-              onChange={(e) => setPlannedCost(e.target.value)}
-              required
-            />
-          )}
-          <TextField
-            label="Location"
-            name="event-location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
-          <SelectField
-            label="Registration mode"
-            name="event-reg"
-            value={regMode}
-            onChange={(e) =>
-              setRegMode(e.target.value as EventRegistrationMode)
-            }
-          >
-            <option value="ANNOUNCEMENT_ONLY">Announcement only</option>
-            <option value="REGISTRATION_REQUIRED">Registration required</option>
-          </SelectField>
-          {regMode === 'REGISTRATION_REQUIRED' && (
-            <TextField
-              label="Capacity"
-              name="event-capacity"
-              type="number"
-              min={1}
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-            />
-          )}
-          <SelectField
-            label="Visibility"
-            name="event-vis"
-            value={vis}
-            onChange={(e) => setVis(e.target.value as MissionVisibility)}
-          >
-            <option value="CHURCH">General church</option>
-            <option value="MINISTRY_PRIVATE">Private</option>
-            <option value="SELECTIVE">Selective</option>
-          </SelectField>
-          <CheckboxField
-            label="Beyond owner scope (needs upper approvals)"
-            checked={beyond}
-            onChange={setBeyond}
-          />
-          <TextAreaField
-            label="Description"
-            name="event-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            rows={3}
-          />
-          <button type="submit" className="btn">
-            Create event
-          </button>
-        </form>
-      </Drawer>
 
       <div className="panel">
         {view !== 'list' ? (
@@ -410,6 +204,23 @@ export function EventsPage() {
           </table>
         )}
       </div>
+
+      {account && (
+        <MissionCreateDrawer
+          kind="EVENT"
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          listSource={source}
+          accountPersonId={account.personId}
+          canManage={canManage}
+          isChurchLeader={churchLead}
+          onCreated={(r) => {
+            setMsg(r.message);
+            refresh();
+            navigate(`/events/${r.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
