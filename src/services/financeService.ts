@@ -371,13 +371,18 @@ export const financeService = {
     occurredOn: string;
     expenseId: string;
   }): { ok: boolean; reason?: string; txnId?: string } {
-    const decision = this.authorizeFund(
+    const manage = this.authorizeFund(
       input.actorPersonId,
       'fund-deacon',
       'MANAGE',
     );
-    if (!decision.allowed) {
-      return { ok: false, reason: decision.reason };
+    const approve = this.authorizeFund(
+      input.actorPersonId,
+      'fund-deacon',
+      'APPROVE',
+    );
+    if (!manage.allowed && !approve.allowed) {
+      return { ok: false, reason: manage.reason || approve.reason };
     }
     const txnId = `txn-deacon-exp-${input.expenseId}`;
     pushFinanceTxn({
